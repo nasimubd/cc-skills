@@ -595,6 +595,28 @@
         "cross-repo"
       ],
       "strict": false
+    },
+    {
+      "name": "alpha-forge-preshop",
+      "description": "Phase 1 Quality Gates for Alpha Forge PR review: RNG determinism, URL validation, parameter validation, manifest sync",
+      "version": "1.0.0",
+      "source": "./plugins/alpha-forge-preshop",
+      "category": "quality",
+      "author": {
+        "name": "Terry Li",
+        "url": "https://github.com/terrylica"
+      },
+      "keywords": [
+        "alpha-forge",
+        "quality-gates",
+        "pre-commit",
+        "validation",
+        "parameter-safety",
+        "manifest-sync",
+        "rng-determinism",
+        "pr-review"
+      ],
+      "strict": false
     }
   ]
 }
