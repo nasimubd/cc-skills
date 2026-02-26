@@ -1,3 +1,44 @@
+## [11.58.2](https://github.com/terrylica/cc-skills/compare/v11.58.1...v11.58.2) (2026-02-26)
+
+
+### Bug Fixes
+
+* rename alpha-forge-preshop to alpha-forge-preship (typo) ([379eba1](https://github.com/terrylica/cc-skills/commit/379eba16190c712671942c1be3c6a349e31e5fd9))
+
+
+
+
+
+---
+
+## Documentation Changes
+
+## Plugin Documentation
+
+### Plugin Skills
+
+- [Alpha Forge Pre-Ship Quality Gates - Phase 1](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/SKILL.md) - renamed from `plugins/alpha-forge-preshop/SKILL.md`
+
+### Plugin READMEs
+
+- [Alpha Forge Pre-Ship Quality Gates - Phase 1](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/README.md) - renamed from `plugins/alpha-forge-preshop/README.md`
+
+## Other Documentation
+
+### Other
+
+- [5-Layer Defense-in-Depth Synthesis: Complete Architecture](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/5_LAYER_DEFENSE_SYNTHESIS_2026-02-23.md) - renamed from `plugins/alpha-forge-preshop/5_LAYER_DEFENSE_SYNTHESIS_2026-02-23.md`
+- [Phase 1 Quality Gates Implementation - COMPLETE ✅](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/IMPLEMENTATION_SUMMARY.md) - renamed from `plugins/alpha-forge-preshop/IMPLEMENTATION_SUMMARY.md`
+- [Official Phase 1 Implementation Handoff](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/OFFICIAL_PHASE1_HANDOFF_2026-02-23.md) - renamed from `plugins/alpha-forge-preshop/OFFICIAL_PHASE1_HANDOFF_2026-02-23.md`
+- [Phase 1 Quality Gates - Implementation Status](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/PHASE_1_STATUS.md) - renamed from `plugins/alpha-forge-preshop/PHASE_1_STATUS.md`
+- [Phase 2 Quality Gates - Implementation Summary](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/PHASE_2_IMPLEMENTATION_SUMMARY.md) - renamed from `plugins/alpha-forge-preshop/PHASE_2_IMPLEMENTATION_SUMMARY.md`
+- [Phase 1 Quality Gates Implementation Summary](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/PHASE1_IMPLEMENTATION_SUMMARY.md) - renamed from `plugins/alpha-forge-preshop/PHASE1_IMPLEMENTATION_SUMMARY.md`
+- [Phase 1 Quality Gates: Production Ready - Final Verification](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/PHASE1_PRODUCTION_READY_2026-02-23.md) - renamed from `plugins/alpha-forge-preshop/PHASE1_PRODUCTION_READY_2026-02-23.md`
+- [TGI-1 Project Archive - Final Closure](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/PROJECT_ARCHIVE_2026-02-23.md) - renamed from `plugins/alpha-forge-preshop/PROJECT_ARCHIVE_2026-02-23.md`
+- [TGI-1 Project: OFFICIALLY COMPLETE - FINAL CLOSURE](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/PROJECT_COMPLETE_FINAL_2026-02-23.md) - renamed from `plugins/alpha-forge-preshop/PROJECT_COMPLETE_FINAL_2026-02-23.md`
+- [Alpha Forge Pre-Ship Audit Framework - Complete Reference](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/reference.md) - renamed from `plugins/alpha-forge-preshop/reference.md`
+- [Phase 1 Quality Gates - Verification Report](https://github.com/terrylica/cc-skills/blob/main/plugins/alpha-forge-preship/VERIFICATION.md) - renamed from `plugins/alpha-forge-preshop/VERIFICATION.md`
+
 ## [11.58.1](https://github.com/terrylica/cc-skills/compare/v11.58.0...v11.58.1) (2026-02-25)
 
 
