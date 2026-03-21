@@ -77,7 +77,7 @@ The governance model addresses identified inconsistencies, assigns ownership, an
 | **Development** | plugin-dev, gh-tools, git-town-workflow | @terryli |
 | **DevOps** | devops-tools, dotfiles-tools, quality-tools | @terryli |
 | **Communication** | gmail-commander, calcom-commander | @terryli |
-| **Media** | kokoro-tts, tts-telegram-sync, asciinema-tools | @terryli |
+| **Media** | kokoro-tts, tts-tg-sync, asciinema-tools | @terryli |
 | **Finance** | mql5, quant-research | @terryli |
 | **System** | mise, rust-tools, link-tools, statusline-tools | @terryli |
 
@@ -287,7 +287,7 @@ Suggested metrics to track over time:
 | quant-research | Good | ✓ | ✓ | - | Add Commands table |
 | gmail-commander | Fair | ✓ | - | ✓ | Add Skills table |
 | kokoro-tts | Fair | ⚠ Hub only | ✓ | - | Add Sibling link, Commands table |
-| tts-telegram-sync | Fair | ✓ | - | - | Add Skills table, Commands table |
+| tts-tg-sync | Fair | ✓ | - | - | Add Skills table, Commands table |
 | calcom-commander | Fair | ✓ | - | - | Add Skills table, Commands table |
 | mise | Fair | ✓ | - | ✓ | Add Skills table |
 | gitnexus-tools | Good | ✓ | ✓ | - | Add Commands table |
