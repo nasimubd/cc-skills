@@ -4,12 +4,12 @@ Route scrape requests to the correct backend based on URL pattern.
 
 ## Routing Table
 
-| URL Pattern                 | Scraper     | Why                                                | Endpoint                          |
-| --------------------------- | ----------- | -------------------------------------------------- | --------------------------------- |
-| `chatgpt.com/share/*`       | Jina Reader | Cleaner markdown than Firecrawl (no escaped chars) | `https://r.jina.ai/{URL}`         |
-| `gemini.google.com/share/*` | Firecrawl   | JS-heavy SPA, needs headless browser               | `http://172.25.236.1:3003/scrape` |
-| `claude.ai/artifacts/*`     | Jina Reader | Static content, no JS rendering needed             | `https://r.jina.ai/{URL}`         |
-| Other web pages             | Jina Reader | Default fallback for static pages                  | `https://r.jina.ai/{URL}`         |
+| URL Pattern                 | Scraper     | Why                                                | Endpoint                      |
+| --------------------------- | ----------- | -------------------------------------------------- | ----------------------------- |
+| `chatgpt.com/share/*`       | Jina Reader | Cleaner markdown than Firecrawl (no escaped chars) | `https://r.jina.ai/{URL}`     |
+| `gemini.google.com/share/*` | Firecrawl   | JS-heavy SPA, needs headless browser               | `http://bigblack:3003/scrape` |
+| `claude.ai/artifacts/*`     | Jina Reader | Static content, no JS rendering needed             | `https://r.jina.ai/{URL}`     |
+| Other web pages             | Jina Reader | Default fallback for static pages                  | `https://r.jina.ai/{URL}`     |
 
 > **2026-02-09 finding**: ChatGPT share URLs moved from Firecrawl to Jina Reader.
 > Firecrawl produced escaped markdown (`\*\*bold\*\*`) and included ChatGPT UI chrome.
@@ -17,18 +17,18 @@ Route scrape requests to the correct backend based on URL pattern.
 
 ## Firecrawl (Self-Hosted)
 
-**Host**: `littleblack` via ZeroTier (`172.25.236.1:3003`)
+**Host**: `bigblack` via Tailscale (`bigblack.tail0f299b.ts.net:3003`)
 
 ### Preflight Check (3-Step Deep Health Check)
 
 A simple `ping` is **insufficient** — containers can be "Up" while internal processes are dead from RAM/CPU overload.
 
 ```bash
-# Step 1: ZeroTier connectivity
-ping -c1 -W2 172.25.236.1 >/dev/null 2>&1 && echo "Network: OK" || echo "Network: UNREACHABLE"
+# Step 1: Tailscale connectivity
+ping -c1 -W2 bigblack >/dev/null 2>&1 && echo "Network: OK" || echo "Network: UNREACHABLE"
 
 # Step 2: Deep API health — test actual scrape capability
-HTTP_CODE=$(ssh littleblack 'curl -sf -o /dev/null -w "%{http_code}" --max-time 10 \
+HTTP_CODE=$(ssh bigblack 'curl -sf -o /dev/null -w "%{http_code}" --max-time 10 \
   -X POST http://localhost:3002/v1/scrape \
   -H "Content-Type: application/json" \
   -d "{\"url\":\"https://example.com\",\"formats\":[\"markdown\"]}"' 2>/dev/null || echo "000")
@@ -37,7 +37,7 @@ echo "API health: HTTP $HTTP_CODE"
 # Step 3: If unhealthy, check logs for WORKER STALLED
 if [ "$HTTP_CODE" = "000" ] || [ "$HTTP_CODE" = "502" ] || [ "$HTTP_CODE" = "503" ]; then
   echo "UNHEALTHY — checking logs..."
-  ssh littleblack 'docker logs firecrawl-api-1 --tail 20 2>&1 | grep -iE "stalled|error|exit" || echo "No error indicators found"'
+  ssh bigblack 'docker logs firecrawl-api-1 --tail 20 2>&1 | grep -iE "stalled|error|exit" || echo "No error indicators found"'
 fi
 ```
 
@@ -45,11 +45,11 @@ fi
 
 ```bash
 # Restart critical containers (not docker compose — may lack permissions to compose dir)
-ssh littleblack 'docker restart firecrawl-api-1 firecrawl-playwright-service-1'
+ssh bigblack 'docker restart firecrawl-api-1 firecrawl-playwright-service-1'
 sleep 20  # Wait for API initialization
 
 # Verify recovery
-ssh littleblack 'curl -sf -o /dev/null -w "%{http_code}" --max-time 10 \
+ssh bigblack 'curl -sf -o /dev/null -w "%{http_code}" --max-time 10 \
   -X POST http://localhost:3002/v1/scrape \
   -H "Content-Type: application/json" \
   -d "{\"url\":\"https://example.com\",\"formats\":[\"markdown\"]}"'
@@ -59,13 +59,13 @@ ssh littleblack 'curl -sf -o /dev/null -w "%{http_code}" --max-time 10 \
 If still unhealthy after restart, escalate to full recreate:
 
 ```bash
-ssh littleblack 'cd ~/firecrawl && docker compose up -d --force-recreate'
+ssh bigblack 'cd ~/firecrawl && docker compose up -d --force-recreate'
 ```
 
 ### Scrape Command
 
 ```bash
-curl -s --max-time 120 "http://172.25.236.1:3003/scrape?url=${URL}&name=${SLUG}"
+curl -s --max-time 120 "http://bigblack:3003/scrape?url=${URL}&name=${SLUG}"
 ```
 
 **Parameters**:
@@ -105,7 +105,7 @@ curl -s "https://r.jina.ai/${URL}"
 
 | Issue                          | Diagnosis                          | Fix                                                                       |
 | ------------------------------ | ---------------------------------- | ------------------------------------------------------------------------- |
-| Firecrawl connection refused   | ZeroTier not connected             | `zerotier-cli status`, join network                                       |
+| Firecrawl connection refused   | Tailscale not connected            | `tailscale status`, join network                                          |
 | Firecrawl "Up" but dead        | Container alive, processes crashed | `docker restart firecrawl-api-1 firecrawl-playwright-service-1`, wait 20s |
 | Firecrawl WORKER STALLED       | RAM/CPU overload (>85% mem)        | Same as above; check `docker logs firecrawl-api-1 --tail 50`              |
 | Firecrawl timeout              | Page too complex                   | Increase timeout, try Jina fallback                                       |

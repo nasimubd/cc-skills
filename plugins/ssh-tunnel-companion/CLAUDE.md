@@ -27,7 +27,7 @@ The launchd tunnel `bigblack` alias in `~/.ssh/config` resolves to the Tailscale
 ```
 ssh-tunnel-companion/
 ├── CLAUDE.md                  ← You are here
-├── Makefile                   ← install/uninstall/start/stop/restart/status/logs/zt-probe
+├── Makefile                   ← install/uninstall/start/stop/restart/status/logs/ping
 ├── launchd/
 │   └── com.terryli.ssh-tunnel-companion.plist   ← Layer 2
 ├── swiftbar/
@@ -36,16 +36,17 @@ ssh-tunnel-companion/
     ├── install.sh             ← Deploy all 3 layers
     ├── uninstall.sh           ← Remove all 3 layers (preserves SSH config + sleepwatcher daemon)
     ├── wakeup.sh              ← Layer 3 source (appended to ~/.wakeup)
-    └── zt-probe.sh            ← ZeroTier health probe (sudo required)
+    └── zt-probe.sh            ← DEPRECATED: ZeroTier health probe (replaced by `make ping`)
 ```
 
 ## Ports Forwarded
 
-| Local             | Remote          | Service                     |
-| ----------------- | --------------- | --------------------------- |
-| `localhost:18123` | `bigblack:8123` | ClickHouse HTTP             |
-| `localhost:18081` | `bigblack:8081` | SSE sidecar                 |
-| `localhost:18095` | `bigblack:8095` | ccmax-monitor dashboard API |
+| Local             | Remote          | Service                               |
+| ----------------- | --------------- | ------------------------------------- |
+| `localhost:18123` | `bigblack:8123` | ClickHouse HTTP                       |
+| `localhost:18081` | `bigblack:8081` | SSE sidecar                           |
+| `localhost:18095` | `bigblack:8095` | ccmax-monitor dashboard API           |
+| `localhost:5900`  | `bigblack:5900` | VNC (x11vnc, MT5/WINE on display :99) |
 
 ## Commands
 
@@ -57,13 +58,14 @@ make stop        # Unload launchd agent
 make restart     # Kill SSH → launchd restarts it
 make status      # Show all 3 layers + ClickHouse connectivity
 make logs        # Tail /tmp/ssh-tunnel-companion.log
-make zt-probe    # ZeroTier diagnostics (requires sudo)
+make ping        # Tailscale connectivity check to bigblack
 ```
 
 ## Consumers
 
 - **flowsurface** — `mise run preflight` checks `localhost:18123` connectivity. Tunnel lifecycle is NOT managed by flowsurface (was migrated out of `.mise/tasks/infra.toml`).
-- **statusline-tools** — `custom-statusline.sh` queries `localhost:18095/api/status` for ccmax-monitor account info (added 2026-04-06 after ZeroTier removal).
+- **statusline-tools** — `custom-statusline.sh` queries `localhost:18095/api/status` for ccmax-monitor account info.
+- **TigerVNC viewer** — connects to `localhost:5900` for MT5/WINE remote desktop on bigblack.
 - Any tool needing ClickHouse on bigblack via `localhost:18123`.
 
 ## Self-Referencing Convention

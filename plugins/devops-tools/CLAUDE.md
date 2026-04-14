@@ -39,16 +39,13 @@ op item get "Item" --vault "Claude Automation" --reveal
 
 ## Self-Hosted Services
 
-| Service    | Host        | Port | Skill                                             |
-| ---------- | ----------- | ---- | ------------------------------------------------- |
-| Firecrawl  | littleblack | 3003 | `Skill(devops-tools:firecrawl-research-patterns)` |
-| ClickHouse | bigblack    | 8123 | `Skill(devops-tools:clickhouse-cloud-management)` |
+All services run on **bigblack** (Tailscale: `bigblack.tail0f299b.ts.net`). Access via SSH tunnel managed by ssh-tunnel-companion.
 
-**Firecrawl**: Web scraping for JS-heavy pages (Gemini/ChatGPT shares). Use `curl` not `WebFetch` (ZeroTier only).
-
-```bash
-curl "http://172.25.236.1:3003/scrape?url=URL&name=NAME"
-```
+| Service    | Host     | Port | Tunnel          | Skill                                                                 |
+| ---------- | -------- | ---- | --------------- | --------------------------------------------------------------------- |
+| ClickHouse | bigblack | 8123 | localhost:18123 | `Skill(devops-tools:clickhouse-cloud-management)`                     |
+| VNC (MT5)  | bigblack | 5900 | localhost:5900  | x11vnc, display :99, MT5/WINE                                         |
+| Firecrawl  | bigblack | 3003 | —               | `Skill(devops-tools:firecrawl-research-patterns)` (currently offline) |
 
 **ClickHouse (bigblack)**: Range bar data with 47 microstructure features (260M+ bars). Used by `rangebar-py` package. ClickHouse listens on localhost only — access via SSH tunnel (rangebar preflight handles automatically).
 
@@ -61,7 +58,7 @@ RANGEBAR_MODE=remote          # Skip local ClickHouse check
 ssh bigblack "curl -s 'http://localhost:8123/?query=SELECT+1'"
 ```
 
-**Reference**: [ZeroTier Network](/docs/infrastructure/zerotier-network.md)
+**Network**: Tailscale primary (`ssh bigblack`), Cloudflare Access fallback (`ssh bigblack-cf`). See [ssh-tunnel-companion CLAUDE.md](../ssh-tunnel-companion/CLAUDE.md).
 
 ## Skills
 

@@ -100,6 +100,8 @@ for i in $(seq 1 5); do
     echo "=== Install complete ==="
     echo "  localhost:18123 → bigblack:8123 (ClickHouse)"
     echo "  localhost:18081 → bigblack:8081 (SSE sidecar)"
+    echo "  localhost:18095 → bigblack:8095 (ccmax-monitor API)"
+    echo "  localhost:5900  → bigblack:5900 (VNC — MT5/WINE)"
     echo ""
     echo "  SwiftBar: look for the tunnel indicator in your menu bar"
     echo "  Logs: /tmp/ssh-tunnel-companion.log"
@@ -112,5 +114,5 @@ done
 echo ""
 echo "WARNING: Tunnel did not come up within 10s"
 echo "  Check: /tmp/ssh-tunnel-companion.log"
-echo "  Check: Is bigblack reachable? Run: make zt-probe"
+echo "  Check: Is bigblack reachable? Run: tailscale ping bigblack"
 exit 1

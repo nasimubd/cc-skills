@@ -9,7 +9,7 @@ brew install pueue
 pueued -d  # Start daemon
 ```
 
-## Linux (BigBlack/LittleBlack)
+## Linux (BigBlack)
 
 ```bash
 # Download from GitHub releases (see https://github.com/Nukesor/pueue/releases for latest)
