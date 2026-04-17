@@ -117,9 +117,10 @@ Recovery strategies for autonomous operation (no human interaction available):
 
 **Maximize GPU acceleration for slow processes.** Search for OSS tools, fork broken ones to `~/fork-tools/`, patch for Python 3.13 + latest CUDA.
 
-| Workstation | SSH Alias  | GPU      | Use        |
-| ----------- | ---------- | -------- | ---------- |
-| BigBlack    | `bigblack` | RTX 4090 | production |
+| Workstation | SSH Alias      | GPU         | Use        |
+| ----------- | -------------- | ----------- | ---------- |
+| BigBlack    | `bigblack`     | RTX 4090    | production |
+| LittleBlack | `littleblack`  | RTX 2080 Ti | dev/test   |
 
 **Python 3.13 ONLY. Never downgrade.**
 

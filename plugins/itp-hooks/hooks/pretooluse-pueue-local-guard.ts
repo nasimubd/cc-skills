@@ -42,6 +42,7 @@ const REMOTE_CONTEXT_PATTERNS: { pattern: RegExp; label: string }[] = [
 
   // Explicit hostname references
   { pattern: /\bbigblack\b/i, label: "bigblack" },
+  { pattern: /\blittleblack\b/i, label: "littleblack" },
 
   // Remote working directory flag
   { pattern: /-w\s+\/home\//, label: "-w /home/" },
