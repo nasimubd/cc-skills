@@ -2,7 +2,7 @@
 
 > Producer-side session chronicle sharing pipeline. Bundles Claude Code JSONL, sanitizes, uploads to Cloudflare R2, emits a 7-day presigned URL.
 
-**Status:** Phases 0 (R2 provisioning), 1 (bundle), 2 (sanitize), 3 (archive), 4 (upload) complete. Phases 5–8 pending.
+**Status:** Phases 0 (R2), 1 (bundle), 2 (sanitize), 3 (archive), 4 (upload), 5 (orchestrator) complete. Phases 6–8 pending.
 
 **Hub**: [Root CLAUDE.md](../../CLAUDE.md)
 
@@ -24,18 +24,21 @@ Terry (supervisor) needs a reliable way to receive my session chronicles for rev
                          │
                          ▼
 3. Archive     tar+gzip the sanitized sessions + manifest into a single
-               .tar.gz with a sidecar .sha256.
+               chronicle-share.tar.gz with a sidecar .sha256.
                          │
                          ▼
-4. Upload      aws s3 cp against the R2 endpoint (S3-compat API).
-               Credentials loaded from 1Password.
+4. Upload      aws s3 cp against the R2 endpoint (S3-compat API), then
+               aws s3 presign --expires-in 604800 (7 days). Credentials
+               loaded from 1Password.
                          │
                          ▼
-5. Presign     aws s3 presign --expires-in 604800 (7 days).
+5. Orchestrate share.sh wraps 1→4 into a single invocation and emits
+               the presigned URL on stdout. Phase-specific exit codes
+               (2/3/4/5) identify which step failed.
                          │
                          ▼
-6. Emit        Print the URL to stdout. Optionally inline Telethon post
-               into Bruntwork Assignments topic (nasim profile).
+6. Emit        (Phase 6, pending) — inline Telethon post into Bruntwork
+               Assignments topic (nasim profile).
 ```
 
 ## Phase 1 (bundle) — implemented
@@ -306,6 +309,55 @@ Verified end-to-end 2026-04-21 against the live `nasim-chronicles` bucket:
 - Downloaded bytes match `archive.sha256` exactly (byte-for-byte round-trip confirmed)
 - Test object cleaned up post-verification via `aws s3 rm`; follow-up curl to the same presigned URL returns HTTP 404 (confirms deletion)
 
+## Phase 5 (orchestrator) — implemented
+
+**Script:** [`scripts/share.sh`](./scripts/share.sh)
+**Tests:** [`tests/test-share.sh`](./tests/test-share.sh)
+
+### CLI surface
+```
+share.sh [--project PATH] [--limit N]                  (bundle args)
+         [--expires-in SECONDS] [--key-prefix PATH]    (upload args)
+         [--dry-run-upload]                             (safe mode)
+         [--keep-staging]                               (debug)
+```
+
+Forwarded args:
+- `--project`, `--limit` → `bundle.sh`
+- `--expires-in`, `--key-prefix` → `upload.sh`
+- `--dry-run-upload` → translates to `--dry-run` on `upload.sh` only (bundle/sanitize/archive still run for real)
+- `--keep-staging` is consumed by `share.sh` itself, not forwarded
+
+Stdout (on success): the 7-day presigned URL, single line, pipe-friendly for Phase 6 Telegram post. Stderr: progress logs from every phase plus one-line section headers.
+
+Exit codes: `0` full pipeline success, `1` usage/validation, `2` bundle failed, `3` sanitize failed, `4` archive failed, `5` upload failed.
+
+### Key behaviors
+- **Sibling resolution** — `share.sh` locates `bundle.sh` / `sanitize.sh` / `archive.sh` / `upload.sh` via `$HERE` (its own directory), resolving symlinks first. Scripts work in-place from `plugins/chronicle-share/scripts/`.
+- **Staging preservation on failure** — if any phase fails, the staging dir is left intact (regardless of `--keep-staging`) with a logged path so you can inspect what broke. Cleanup only happens on full success.
+- **`--dry-run-upload` preserves staging** — because no real upload happened, there's nothing to produce and the staging is what you inspect.
+- **Phase-specific exit codes** — `2/3/4/5` let callers distinguish which phase failed without parsing stderr.
+
+### Test coverage
+22-case suite at [`tests/test-share.sh`](./tests/test-share.sh), runnable standalone. Uses a PATH-independent shim strategy: copies `share.sh` into a temp dir next to fake `bundle.sh` / `sanitize.sh` / `archive.sh` / `upload.sh` scripts (each honoring `FAIL_BUNDLE` / `FAIL_SANITIZE` / `FAIL_ARCHIVE` / `FAIL_UPLOAD` env vars). No real 1Password creds or R2 access needed.
+
+- **Usage + arg parsing (2)** — `--help`, unknown flag
+- **Sibling validation (1)** — missing sibling script exits 1
+- **Happy path (4)** — exits 0, stdout is URL, staging removed on success, `--keep-staging` preserves
+- **`--dry-run-upload` (3)** — exits 0, no URL on stdout, staging preserved
+- **Argument passthrough (5)** — `--project`+`--limit` reach bundle, STAGING reaches sanitize+archive, `--expires-in`+`--key-prefix` reach upload, `--dry-run-upload` translates to `--dry-run`, `--keep-staging` not forwarded
+- **Per-phase failure (7)** — each phase failure → correct exit code (2/3/4/5) + staging preserved
+
+All 22 pass as of 2026-04-21.
+
+### Integration test (real R2)
+Verified end-to-end 2026-04-21 against `nasim-chronicles`:
+- `share.sh --project /Users/mdnasim/eon/cc-skills --limit 1 --key-prefix chronicles/test-phase5`
+- Full pipeline ran in ~18 seconds (bundle → sanitize with 282 redactions → archive 1.60 MB → upload at ~16 MiB/s)
+- Presigned URL on stdout → anonymous `curl` download returned HTTP 200 with byte-for-byte SHA-256 match (`5aba568a...`)
+- Staging dir removed on success (per default behavior)
+- R2 object cleaned up post-verification via `aws s3 rm`
+
 ## Key design decisions (to be formalized)
 
 | Decision | Choice | Rationale |
@@ -324,7 +376,7 @@ Verified end-to-end 2026-04-21 against the live `nasim-chronicles` bucket:
 - [x] **Phase 2** — `scripts/sanitize.sh` (done 2026-04-21; 14/14 tests pass including canary with 4 real-format secrets)
 - [x] **Phase 3** — `scripts/archive.sh` (done 2026-04-21; 32/32 tests pass + E2E verified; tar.gz + sidecar SHA; manifest v3)
 - [x] **Phase 4** — `scripts/upload.sh` (done 2026-04-21; 37/37 tests pass + real R2 upload verified end-to-end; manifest v4; 1Password-backed creds; 7-day presigned URL)
-- [ ] **Phase 5** — `scripts/share.sh` (orchestrator chaining 1→4; first working end-to-end)
+- [x] **Phase 5** — `scripts/share.sh` (done 2026-04-21; 22/22 tests pass + real R2 E2E in ~18 seconds; chains 1→4; phase-specific exit codes)
 - [ ] **Phase 6** — inline Telethon post (nasim profile → Bruntwork topic 2)
 - [ ] **Phase 7** — full `skills/share/SKILL.md` workflow + `skills/doctor/SKILL.md` preflight
 - [ ] **Phase 8** — discoverability: user-global `~/.claude/commands/chronicle-share.md` OR marketplace.json registration (requires Nasim's explicit sign-off per fork rule)
