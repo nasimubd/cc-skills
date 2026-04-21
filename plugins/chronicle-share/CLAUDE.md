@@ -2,7 +2,7 @@
 
 > Producer-side session chronicle sharing pipeline. Bundles Claude Code JSONL, sanitizes, uploads to Cloudflare R2, emits a 7-day presigned URL.
 
-**Status:** Phases 0 (R2 provisioning), 1 (bundle), 2 (sanitize) complete. Phases 3–8 pending.
+**Status:** Phases 0 (R2 provisioning), 1 (bundle), 2 (sanitize), 3 (archive) complete. Phases 4–8 pending.
 
 **Hub**: [Root CLAUDE.md](../../CLAUDE.md)
 
@@ -23,7 +23,8 @@ Terry (supervisor) needs a reliable way to receive my session chronicles for rev
                — never skipped, never re-implemented locally.
                          │
                          ▼
-3. Archive     zip the sanitized sessions + manifest into a single .zip.
+3. Archive     tar+gzip the sanitized sessions + manifest into a single
+               .tar.gz with a sidecar .sha256.
                          │
                          ▼
 4. Upload      aws s3 cp against the R2 endpoint (S3-compat API).
@@ -164,13 +165,82 @@ Phase 2 flips `sanitized: true` and adds two new top-level objects plus three fi
 ### Test coverage
 14-case suite covers: `--help`, missing staging dir (exit 1), staging without manifest (exit 1), staging without sessions/ (exit 1), missing `STAGING_DIR` arg, happy path end-to-end, post-sanitize manifest schema, file count parity raw↔sanitized, sanitized SHA-256 round-trip + valid JSONL, idempotency guard (re-sanitize refused), **canary with 4 known secrets** (email / GitHub PAT / AWS key / JWT — all replaced with correct placeholders), bad `--sanitizer` path rejected, unknown flag rejected, two positional args rejected. All pass as of 2026-04-21.
 
+## Phase 3 (archive) — implemented
+
+**Script:** [`scripts/archive.sh`](./scripts/archive.sh)
+**Tests:** [`tests/test-archive.sh`](./tests/test-archive.sh)
+
+### CLI surface
+```
+archive.sh [--force] STAGING_DIR
+```
+- Positional `STAGING_DIR`: the path returned by `sanitize.sh` on stdout (must have `manifest.sanitized=true`).
+- `--force`: bypass the idempotency guard and re-create the archive.
+
+Stdout: the same `STAGING_DIR` (for chaining). Stderr: logs. Exit codes: `0` ok, `1` usage/validation, `2` archive creation failed.
+
+### Key behaviors
+- **Fixed-name artifact** — always `chronicle-share.tar.gz` inside `STAGING_DIR`. Phase 4 (upload) knows exactly where to find it; no discovery needed.
+- **Sidecar SHA-256** — `chronicle-share.tar.gz.sha256` written alongside in `shasum -c`-compatible format (`<sha>  <filename>`).
+- **Raw `sessions/` excluded** — only `sessions-sanitized/`, `manifest.json`, and `redaction_report.txt` go into the archive. Pre-sanitization data stays local for forensic audit.
+- **Embedded manifest snapshot** — the archive carries `manifest.json` with `archived=true` and the `archive` subfield populated (filename/format/created_at_utc/contents) but **without** `size_bytes`/`sha256` (those are self-referential). Consumers extracting the archive get full provenance.
+- **Outer manifest is superset** — the manifest left in `STAGING_DIR` after Phase 3 is the embedded manifest plus `archive.size_bytes` and `archive.sha256`. That's what Phase 4 reads for upload metadata.
+- **Idempotency guard** — refuses if `manifest.archived` is already `true` unless `--force` is passed.
+
+### Post-Phase-3 staging layout
+```
+<STAGING>/
+├── manifest.json                    (mutated: archived=true + archive.*)
+├── chronicle-share.tar.gz            (Phase 4 upload artifact)
+├── chronicle-share.tar.gz.sha256     (sidecar for verification)
+├── sessions/                         (unchanged — forensic audit)
+├── sessions-sanitized/               (unchanged on disk, packaged in archive)
+└── redaction_report.txt              (unchanged on disk, packaged in archive)
+```
+
+### Manifest v3 additions
+Phase 3 flips `archived: true` and adds one new top-level object.
+
+```jsonc
+{
+  // ... all Phase 1 + Phase 2 fields unchanged ...
+  "archived": true,                                      // was false
+  "archive": {                                           // NEW
+    "filename":       "chronicle-share.tar.gz",
+    "format":         "tar.gz",
+    "created_at_utc": "2026-04-21T11:26:08Z",
+    "contents": [
+      "manifest.json",
+      "sessions-sanitized/*.jsonl",
+      "redaction_report.txt"
+    ],
+    "size_bytes":     1394330,                           // outer only (self-referential in inner)
+    "sha256":         "9f89ba19...4fb4f96"               // outer only
+  }
+}
+```
+
+### Test coverage
+32-case suite at [`tests/test-archive.sh`](./tests/test-archive.sh), runnable standalone (no Phase 1/2 required — mocks a post-sanitize staging dir). Covers:
+
+- **Usage + arg parsing (4)** — `--help`, missing `STAGING_DIR`, unknown flag, two positional args
+- **Validation guards (8)** — nonexistent staging, missing/invalid manifest, `sanitized=false` refused, missing `sessions-sanitized/` or report, empty `sessions-sanitized/`, manifest/file count mismatch
+- **Happy path (3)** — exit 0, stdout echoes staging, artifact + sidecar written
+- **Outer manifest (6)** — `archived=true`, all 6 `archive.*` keys, filename/format, `size_bytes` matches `stat`, `sha256` matches `shasum`
+- **Sidecar (2)** — exact line format, `shasum -c` passes
+- **Archive contents (3)** — valid `tar.gz`, contains all 3 expected entries, raw `sessions/` excluded
+- **Embedded manifest (3)** — `archived=true`, has 4 `archive.*` keys (no self-referential size/sha), sanitized JSONL round-trips byte-for-byte
+- **Idempotency + `--force` (3)** — re-archive refused, `--force` succeeds, sidecar still verifies post-force
+
+All 32 pass as of 2026-04-21. Verified end-to-end against a real 5.95 MB session: compresses to 1.39 MB (76% ratio), sidecar verifies, archive is a valid tar.gz extractable by `tar -xzf`.
+
 ## Key design decisions (to be formalized)
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
 | Storage | Cloudflare R2 | Free tier (10 GB), no egress fees, S3-compat API. Confirmed by Terry as recommended. |
 | Sanitizer | Shell out to upstream | Single source of truth; never drifts when Terry updates the patterns. |
-| Compression | Brotli | Matches upstream pipeline convention. |
+| Compression | gzip (tar.gz) | Cross-platform, no new deps. Phase 3 can extend to zstd later without breaking the contract (archive format lives in `manifest.archive.format`). |
 | URL format | Presigned, 7-day expiry | Matches Terry's own pipeline's `X-Amz-Expires=604800`. |
 | Credentials | 1Password (separate item from Terry's) | Isolation: my R2 creds are mine, not the company's. |
 | Telegram post | Delegated to `tlg:send-media` | Uses existing Telethon personal-account session; no new bot infra. |
@@ -180,7 +250,7 @@ Phase 2 flips `sanitized: true` and adds two new top-level objects plus three fi
 - [x] **Phase 0** — R2 account + bucket + API token + 1Password item (done 2026-04-21; verified via end-to-end presigned-URL download)
 - [x] **Phase 1** — `scripts/bundle.sh` (done 2026-04-21; 15/15 tests pass)
 - [x] **Phase 2** — `scripts/sanitize.sh` (done 2026-04-21; 14/14 tests pass including canary with 4 real-format secrets)
-- [ ] **Phase 3** — `scripts/archive.sh` (zip staging into single `.zip`; add `archive_path` + `archive_sha256` to manifest)
+- [x] **Phase 3** — `scripts/archive.sh` (done 2026-04-21; 32/32 tests pass + E2E verified; tar.gz + sidecar SHA; manifest v3)
 - [ ] **Phase 4** — `scripts/upload.sh` (aws s3 cp + presign; add presigned URL + object key to manifest)
 - [ ] **Phase 5** — `scripts/share.sh` (orchestrator chaining 1→4; first working end-to-end)
 - [ ] **Phase 6** — inline Telethon post (nasim profile → Bruntwork topic 2)
