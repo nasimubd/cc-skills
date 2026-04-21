@@ -2,7 +2,7 @@
 
 > Producer-side session chronicle sharing pipeline. Bundles Claude Code JSONL, sanitizes, uploads to Cloudflare R2, emits a 7-day presigned URL.
 
-**Status:** Phases 0–6 complete (R2, bundle, sanitize, archive, upload, orchestrator, Telegram post). Phases 7–8 pending.
+**Status:** Phases 0–7 complete (R2, bundle, sanitize, archive, upload, orchestrator, Telegram post, skills + doctor). Phase 8 pending.
 
 **Hub**: [Root CLAUDE.md](../../CLAUDE.md)
 
@@ -446,6 +446,58 @@ Two-step validation 2026-04-21:
 
 Tests extended to 29 cases (was 22) — added 7 Phase 6 orchestration checks (default invocation, `--no-post`, argpass, dry-run-implies-no-post, post failure → exit 6, staging preserved on post failure, stdout remains presigned URL).
 
+## Phase 7 (skills) — implemented
+
+**Files:**
+- [`skills/share/SKILL.md`](./skills/share/SKILL.md) — full pipeline workflow skill
+- [`skills/doctor/SKILL.md`](./skills/doctor/SKILL.md) — preflight diagnostic skill
+- [`scripts/doctor.sh`](./scripts/doctor.sh) — backing script for the doctor skill (22-check preflight)
+
+### Skill: share
+Replaces the Phase 0 stub. YAML frontmatter exposes the skill to Claude Code via TRIGGERS ("share my chronicle", "share this session", "send chronicle to Terry", "post chronicle to Bruntwork", etc.). The body documents:
+
+- **When to use** vs. Terry's `devops-tools:session-chronicle` consumer skill (clear scoping)
+- **Prerequisites** linked to `/chronicle-share:doctor`
+- **Default flow** — one-liner `share.sh --project $PWD --limit 1`
+- **All 9 flags** with meaning + default + common scenarios
+- **Error-code → phase → fix** matrix
+- **Manifest v5** schema reference
+
+Scripts-only invocation (no slash command registration yet — that's Phase 8):
+```bash
+~/.claude/plugins/marketplaces/cc-skills/plugins/chronicle-share/scripts/share.sh --project "$PWD" --limit 1
+```
+
+### Skill: doctor (new)
+A `model: haiku` skill (fast, cheap) that runs `scripts/doctor.sh` and interprets the output. Checks cover:
+
+| Category          | Check                                                 | Fatal?    |
+| ----------------- | ----------------------------------------------------- | --------- |
+| Shell tools       | `jq`, `shasum`, `tar`, `awk`, `find`, `date`          | Yes       |
+| Package managers  | `uv`, `aws`, `op`                                     | Yes       |
+| HTTP              | `curl`                                                | No (WARN) |
+| 1Password         | Account `E37RVJRKWZAVFEXY6X2VA4PBWA` registered      | Yes       |
+| 1Password         | Item `R2 Chronicle Share` — all 4 fields readable     | Yes       |
+| Telethon          | `~/.local/share/telethon/nasim.session` present       | Yes       |
+| Claude sessions   | Current `$PWD` has sessions                           | No (WARN) |
+| Sanitizer         | Upstream `sanitize_sessions.py` locatable             | Yes       |
+| Sibling scripts   | 6 pipeline scripts present + executable               | Yes       |
+| R2 bucket         | `aws s3api head-bucket nasim-chronicles` succeeds    | Yes       |
+
+Exit codes: `0` all pass, `1` warnings only, `2` at least one FAIL.
+
+### `doctor.sh` CLI surface
+```
+doctor.sh [--quiet] [--json] [--help]
+```
+- `--quiet`: suppress per-check output; exit code still reflects overall status
+- `--json`: emit the full report as a JSON array (machine-readable, overrides quiet)
+
+Verified 2026-04-21 on Nasim's MacBook: 22/22 pass, JSON is valid, quiet mode respected.
+
+### Fix-map embedded in the doctor skill
+The skill body has a `common failures → fixes` table so Claude can automatically suggest the right remediation per check name (e.g. `op:account` FAIL → `op account add ...`; `sanitizer:upstream` FAIL → install `devops-tools` from the cc-skills marketplace).
+
 ## Key design decisions (to be formalized)
 
 | Decision | Choice | Rationale |
@@ -466,7 +518,7 @@ Tests extended to 29 cases (was 22) — added 7 Phase 6 orchestration checks (de
 - [x] **Phase 4** — `scripts/upload.sh` (done 2026-04-21; 37/37 tests pass + real R2 upload verified end-to-end; manifest v4; 1Password-backed creds; 7-day presigned URL)
 - [x] **Phase 5** — `scripts/share.sh` (done 2026-04-21; now 29/29 tests pass; chains 1→6 including Phase 6 post; phase-specific exit codes 2/3/4/5/6)
 - [x] **Phase 6** — `scripts/post.sh` (done 2026-04-21; 31/31 tests pass + real Bruntwork topic 2 post verified as msg 347; Telethon via uv; manifest v5)
-- [ ] **Phase 7** — full `skills/share/SKILL.md` workflow + `skills/doctor/SKILL.md` preflight
+- [x] **Phase 7** — `skills/share/SKILL.md` + `skills/doctor/SKILL.md` + `scripts/doctor.sh` (done 2026-04-21; stub replaced with 150-line functional skill; 22-check preflight verified 22/22 against live system)
 - [ ] **Phase 8** — discoverability: user-global `~/.claude/commands/chronicle-share.md` OR marketplace.json registration (requires Nasim's explicit sign-off per fork rule)
 
 ## Boundary with upstream cc-skills
