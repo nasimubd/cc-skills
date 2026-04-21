@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
-# share.sh — Phase 5 of the chronicle-share pipeline (orchestrator).
+# share.sh — Phase 5 orchestrator of the chronicle-share pipeline.
 #
-# Chain the four per-phase scripts into a single invocation:
+# Chain the five per-phase scripts into a single invocation:
 #   1. bundle.sh    Enumerate project's session JSONL into a staging dir.
 #   2. sanitize.sh  Shell out to upstream sanitizer; redact secrets.
 #   3. archive.sh   Pack sanitized staging into chronicle-share.tar.gz.
 #   4. upload.sh    Push to Cloudflare R2 + emit 7-day presigned URL.
+#   5. post.sh      Post presigned URL + summary to Telegram (unless --no-post).
 #
-# On success, stdout is the presigned URL (one line, pipe-friendly) and the
-# staging dir is removed. On any phase failure, the staging dir is preserved
-# (regardless of --keep-staging) so the user can inspect what went wrong.
+# On success, stdout is the presigned URL (one line, pipe-friendly). The
+# staging dir is removed on full success. On any phase failure, the staging
+# dir is preserved (regardless of --keep-staging) for inspection.
 #
 # Usage:
 #   share.sh [--project PATH] [--limit N]
 #            [--expires-in SECONDS] [--key-prefix PATH]
+#            [--no-post] [--post-chat-id ID] [--post-topic-id N]
 #            [--dry-run-upload] [--keep-staging]
 #   share.sh --help
 #
@@ -24,6 +26,7 @@
 #   3  sanitize.sh failed
 #   4  archive.sh failed
 #   5  upload.sh failed
+#   6  post.sh failed
 
 set -uo pipefail
 
@@ -38,6 +41,7 @@ BUNDLE="$HERE/bundle.sh"
 SANITIZE="$HERE/sanitize.sh"
 ARCHIVE="$HERE/archive.sh"
 UPLOAD="$HERE/upload.sh"
+POST="$HERE/post.sh"
 
 # --- defaults ---------------------------------------------------------------
 PROJECT=""
@@ -46,6 +50,9 @@ EXPIRES_IN=""
 KEY_PREFIX=""
 DRY_RUN_UPLOAD=0
 KEEP_STAGING=0
+NO_POST=0
+POST_CHAT_ID=""
+POST_TOPIC_ID=""
 
 log() { printf '[share] %s\n' "$*" >&2; }
 err() { printf '[share] ERROR: %s\n' "$*" >&2; }
@@ -55,8 +62,8 @@ usage() {
   cat <<'EOF'
 Usage: share.sh [OPTIONS]
 
-Run the full chronicle-share pipeline end-to-end (bundle → sanitize → archive
-→ upload to Cloudflare R2) and emit a 7-day presigned URL on stdout.
+Run the full chronicle-share pipeline (bundle → sanitize → archive → upload
+→ post) and emit the 7-day presigned URL on stdout.
 
 Options (forwarded to bundle.sh):
   --project PATH        Project whose sessions to share (default: $PWD).
@@ -67,6 +74,13 @@ Options (forwarded to upload.sh):
   --key-prefix PATH     Override default R2 object key prefix (default: chronicles).
   --dry-run-upload      Run bundle/sanitize/archive for real but DRY-RUN the
                         upload (validates creds, prints plan, no R2 write).
+                        Implies --no-post (no URL to post).
+
+Options (forwarded to post.sh):
+  --post-chat-id ID     Telegram chat ID (default: -1003958083153, Bruntwork).
+                        For testing: 7730224133 = saved messages.
+  --post-topic-id N     Forum topic ID (default: 2, Assignments & Deliverables).
+  --no-post             Skip Phase 6; emit presigned URL to stdout only.
 
 Options (share.sh only):
   --keep-staging        Preserve the staging dir after successful upload
@@ -81,10 +95,13 @@ EOF
 # --- arg parse --------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --project)          PROJECT="${2:?--project requires a path}";       shift 2 ;;
-    --limit)            LIMIT="${2:?--limit requires a number}";         shift 2 ;;
-    --expires-in)       EXPIRES_IN="${2:?--expires-in requires SECONDS}"; shift 2 ;;
-    --key-prefix)       KEY_PREFIX="${2:?--key-prefix requires a path}"; shift 2 ;;
+    --project)          PROJECT="${2:?--project requires a path}";         shift 2 ;;
+    --limit)            LIMIT="${2:?--limit requires a number}";           shift 2 ;;
+    --expires-in)       EXPIRES_IN="${2:?--expires-in requires SECONDS}";  shift 2 ;;
+    --key-prefix)       KEY_PREFIX="${2:?--key-prefix requires a path}";   shift 2 ;;
+    --post-chat-id)     POST_CHAT_ID="${2:?--post-chat-id requires ID}";   shift 2 ;;
+    --post-topic-id)    POST_TOPIC_ID="${2:?--post-topic-id requires N}";  shift 2 ;;
+    --no-post)          NO_POST=1; shift ;;
     --dry-run-upload)   DRY_RUN_UPLOAD=1; shift ;;
     --keep-staging)     KEEP_STAGING=1; shift ;;
     --help|-h)          usage; exit 0 ;;
@@ -92,8 +109,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# --dry-run-upload implies --no-post (dry-run has no real URL to share)
+if [[ "$DRY_RUN_UPLOAD" -eq 1 ]]; then
+  NO_POST=1
+fi
+
 # --- validate sibling scripts exist -----------------------------------------
-for s in "$BUNDLE" "$SANITIZE" "$ARCHIVE" "$UPLOAD"; do
+required_siblings=("$BUNDLE" "$SANITIZE" "$ARCHIVE" "$UPLOAD")
+if [[ "$NO_POST" -eq 0 ]]; then
+  required_siblings+=("$POST")
+fi
+for s in "${required_siblings[@]}"; do
   if [[ ! -x "$s" ]]; then
     err "sibling script missing or not executable: $s"
     exit 1
@@ -109,6 +135,10 @@ upload_args=()
 [[ -n "$EXPIRES_IN" ]] && upload_args+=(--expires-in "$EXPIRES_IN")
 [[ -n "$KEY_PREFIX" ]] && upload_args+=(--key-prefix "$KEY_PREFIX")
 [[ "$DRY_RUN_UPLOAD" -eq 1 ]] && upload_args+=(--dry-run)
+
+post_args=()
+[[ -n "$POST_CHAT_ID"  ]] && post_args+=(--chat-id  "$POST_CHAT_ID")
+[[ -n "$POST_TOPIC_ID" ]] && post_args+=(--topic-id "$POST_TOPIC_ID")
 
 # --- pipeline ---------------------------------------------------------------
 STAGING=""
@@ -179,6 +209,24 @@ fi
 # On a real upload, stdout is the presigned URL. On --dry-run, stdout is empty.
 presigned_url="$(tail -n 1 "$upload_stdout_file")"
 rm -f "$upload_stdout_file"
+
+# 5. POST ------------------------------------------------------------------
+if [[ "$NO_POST" -eq 0 ]]; then
+  hdr "Phase 6: post"
+  post_stdout_file="$(mktemp)"
+  trap 'rm -f "$post_stdout_file"' EXIT
+
+  if ! "$POST" ${post_args[@]+"${post_args[@]}"} "$STAGING" > "$post_stdout_file"; then
+    err "post.sh failed"
+    rm -f "$post_stdout_file"
+    preserve_on_fail
+    exit 6
+  fi
+
+  post_message_id="$(tail -n 1 "$post_stdout_file")"
+  rm -f "$post_stdout_file"
+  log "posted  : message_id=$post_message_id"
+fi
 
 # --- summary + cleanup ------------------------------------------------------
 hdr "done"

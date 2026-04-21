@@ -88,19 +88,44 @@ echo "$staging"
 FAKE
   chmod +x "$d/archive.sh"
 
-  # Fake upload.sh: if --dry-run, no stdout. Otherwise echo a fake URL.
+  # Fake upload.sh: if --dry-run, no stdout. Otherwise echo a fake URL +
+  # mutate manifest so post.sh's validation guard (uploaded=true) passes.
   cat > "$d/upload.sh" <<'FAKE'
 #!/usr/bin/env bash
 [[ -n "${CAPTURE_ARGS:-}" ]] && printf 'upload: %s\n' "$*" >> "$CAPTURE_ARGS"
 if [[ "${FAIL_UPLOAD:-0}" == "1" ]]; then echo "fake upload failed" >&2; exit 3; fi
-# Simulate: exit without stdout in dry-run mode, else emit fake URL.
+# Last positional is STAGING_DIR.
+staging=""
+for a in "$@"; do [[ "$a" != --* && -d "$a" ]] && staging="$a"; done
+
 dry=0
 for a in "$@"; do [[ "$a" == "--dry-run" ]] && dry=1; done
 if [[ "$dry" -eq 0 ]]; then
+  # Mutate manifest so post.sh sees uploaded=true.
+  if [[ -n "$staging" && -f "$staging/manifest.json" ]]; then
+    jq '.uploaded=true | .upload={
+      bucket: "fake-bucket",
+      key: "fake/key.tar.gz",
+      endpoint_url: "https://fake.r2",
+      uploaded_at_utc: "2026-04-21T00:00:00Z",
+      presigned_url: "https://fake.r2/bucket/obj?X-Amz-Signature=xxx",
+      expires_in_seconds: 604800,
+      expires_at_utc: "2026-04-28T00:00:00Z"
+    }' "$staging/manifest.json" > "$staging/m.tmp" && mv "$staging/m.tmp" "$staging/manifest.json"
+  fi
   echo "https://fake.r2/bucket/obj?X-Amz-Signature=xxx"
 fi
 FAKE
   chmod +x "$d/upload.sh"
+
+  # Fake post.sh: emits a fake message_id.
+  cat > "$d/post.sh" <<'FAKE'
+#!/usr/bin/env bash
+[[ -n "${CAPTURE_ARGS:-}" ]] && printf 'post: %s\n' "$*" >> "$CAPTURE_ARGS"
+if [[ "${FAIL_POST:-0}" == "1" ]]; then echo "fake post failed" >&2; exit 2; fi
+echo "999999"
+FAKE
+  chmod +x "$d/post.sh"
 }
 
 # ============================================================================
@@ -311,6 +336,82 @@ else
   fail "22" "leftover=$leftover"
 fi
 rm -rf "$d" "$log"
+
+# ============================================================================
+# Phase 6 orchestration
+# ============================================================================
+
+hdr "Phase 6 chaining"
+
+# 23. post.sh is called by default
+d=$(mktemp -d -t share-test); mk_shim_dir "$d"
+capture=$(mktemp)
+CAPTURE_ARGS="$capture" "$d/share.sh" >/dev/null 2>&1
+if grep -q '^post:' "$capture"; then
+  pass "23 post.sh invoked by default"
+else
+  fail "23 post.sh default call" "no post: line in capture"
+fi
+rm -f "$capture"; rm -rf "$d"
+
+# 24. --no-post skips post.sh
+d=$(mktemp -d -t share-test); mk_shim_dir "$d"
+capture=$(mktemp)
+CAPTURE_ARGS="$capture" "$d/share.sh" --no-post >/dev/null 2>&1
+if ! grep -q '^post:' "$capture"; then
+  pass "24 --no-post skips post.sh"
+else
+  fail "24 --no-post" "post.sh was called: $(grep '^post:' "$capture")"
+fi
+rm -f "$capture"; rm -rf "$d"
+
+# 25. --post-chat-id + --post-topic-id forwarded
+d=$(mktemp -d -t share-test); mk_shim_dir "$d"
+capture=$(mktemp)
+CAPTURE_ARGS="$capture" "$d/share.sh" \
+  --post-chat-id 7730224133 --post-topic-id 1 >/dev/null 2>&1
+post_line=$(grep '^post:' "$capture")
+if [[ "$post_line" == *"--chat-id 7730224133"* && "$post_line" == *"--topic-id 1"* ]]; then
+  pass "25 --post-chat-id + --post-topic-id forwarded to post.sh"
+else
+  fail "25 post passthrough" "got: $post_line"
+fi
+rm -f "$capture"; rm -rf "$d"
+
+# 26. --dry-run-upload implies --no-post
+d=$(mktemp -d -t share-test); mk_shim_dir "$d"
+capture=$(mktemp)
+CAPTURE_ARGS="$capture" "$d/share.sh" --dry-run-upload >/dev/null 2>&1
+if ! grep -q '^post:' "$capture"; then
+  pass "26 --dry-run-upload implies --no-post"
+else
+  fail "26 dry-run implies no-post" "post.sh was called"
+fi
+rm -f "$capture"; rm -rf "$d"
+
+# 27. post.sh fails → exit 6, staging preserved
+d=$(mktemp -d -t share-test); mk_shim_dir "$d"
+log=$(mktemp)
+FAIL_POST=1 "$d/share.sh" >/dev/null 2>"$log"; rc=$?
+if [[ "$rc" -eq 6 ]]; then pass "27 post failure → exit 6"; else fail "27" "rc=$rc"; fi
+leftover=$(grep -o 'staging preserved for debug: [^ ]*' "$log" | awk '{print $NF}' | head -1)
+if [[ -n "$leftover" && -d "$leftover" ]]; then
+  pass "28 staging preserved on post failure"
+  rm -rf "$leftover"
+else
+  fail "28" "leftover=$leftover"
+fi
+rm -rf "$d" "$log"
+
+# 29. With post enabled, stdout is still the presigned URL (not message_id)
+d=$(mktemp -d -t share-test); mk_shim_dir "$d"
+out=$("$d/share.sh" 2>/dev/null)
+if [[ "$out" == "https://fake.r2/bucket/obj?X-Amz-Signature=xxx" ]]; then
+  pass "29 with post: stdout remains presigned URL"
+else
+  fail "29 stdout" "got: $out"
+fi
+rm -rf "$d"
 
 # ============================================================================
 # Summary
