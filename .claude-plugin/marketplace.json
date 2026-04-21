@@ -1,10 +1,10 @@
 {
-  "name": "cc-skills",
+  "name": "nasimubd-cc-skills",
   "version": "12.49.1",
-  "description": "Claude Code Skills Marketplace",
+  "description": "Claude Code Skills Marketplace — nasimubd fork",
   "owner": {
-    "name": "Terry Li",
-    "url": "https://github.com/terrylica"
+    "name": "MD Nasim",
+    "url": "https://github.com/nasimubd"
   },
   "plugins": [
     {
