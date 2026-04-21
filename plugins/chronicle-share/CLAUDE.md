@@ -2,7 +2,7 @@
 
 > Producer-side session chronicle sharing pipeline. Bundles Claude Code JSONL, sanitizes, uploads to Cloudflare R2, emits a 7-day presigned URL.
 
-**Status:** Phases 0–7 complete (R2, bundle, sanitize, archive, upload, orchestrator, Telegram post, skills + doctor). Phase 8 pending.
+**Status:** Phases 0–8 complete (R2, bundle, sanitize, archive, upload, orchestrator, Telegram post, skills + doctor, marketplace registration). Plugin is feature-complete on the nasimubd fork; a consolidated upstream PR to terrylica/cc-skills remains the final step.
 
 **Hub**: [Root CLAUDE.md](../../CLAUDE.md)
 
@@ -463,7 +463,7 @@ Replaces the Phase 0 stub. YAML frontmatter exposes the skill to Claude Code via
 - **Error-code → phase → fix** matrix
 - **Manifest v5** schema reference
 
-Scripts-only invocation (no slash command registration yet — that's Phase 8):
+Post-Phase-8, Claude Code auto-surfaces both skills via their SKILL.md frontmatter + TRIGGERS once the marketplace is subscribed. Direct script invocation still works for scripted / CI contexts:
 ```bash
 ~/.claude/plugins/marketplaces/cc-skills/plugins/chronicle-share/scripts/share.sh --project "$PWD" --limit 1
 ```
@@ -519,11 +519,11 @@ The skill body has a `common failures → fixes` table so Claude can automatical
 - [x] **Phase 5** — `scripts/share.sh` (done 2026-04-21; now 29/29 tests pass; chains 1→6 including Phase 6 post; phase-specific exit codes 2/3/4/5/6)
 - [x] **Phase 6** — `scripts/post.sh` (done 2026-04-21; 31/31 tests pass + real Bruntwork topic 2 post verified as msg 347; Telethon via uv; manifest v5)
 - [x] **Phase 7** — `skills/share/SKILL.md` + `skills/doctor/SKILL.md` + `scripts/doctor.sh` (done 2026-04-21; stub replaced with 150-line functional skill; 22-check preflight verified 22/22 against live system)
-- [ ] **Phase 8** — discoverability: user-global `~/.claude/commands/chronicle-share.md` OR marketplace.json registration (requires Nasim's explicit sign-off per fork rule)
+- [x] **Phase 8** — marketplace registration (done 2026-04-22; `chronicle-share` entry appended to `.claude-plugin/marketplace.json` as the 32nd plugin on nasimubd fork, `devops` category, version `1.0.0`, 12 keywords; validator passes 32/32 registered, 203 skills; plugin.json bumped 0.0.1 → 1.0.0; next step is consolidated upstream PR to terrylica/cc-skills)
 
 ## Boundary with upstream cc-skills
 
-Per the memory rule set 2026-04-17: in this fork, Claude only adds new content authored by Nasim. Registration into upstream-owned registry files (`.claude-plugin/marketplace.json`, `.mise.toml`) is intentionally **not** done in the scaffolding commit — to be addressed as a separate, explicit step.
+Per the memory rule set 2026-04-17: in this fork, Claude only adds new content authored by Nasim. Registration into upstream-owned registry files was deliberately deferred to Phase 8 (now done) — the marketplace entry is purely additive (new array element), not a modification of existing entries. Upstream (terrylica/cc-skills) remains untouched; see Terry's "brand-new plugin" policy in Bruntwork topic 6 — the plugin will land there via a single consolidated PR once Nasim signs off.
 
 ## References
 

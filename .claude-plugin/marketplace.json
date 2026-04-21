@@ -739,6 +739,32 @@
         "subscription-safe"
       ],
       "strict": false
+    },
+    {
+      "name": "chronicle-share",
+      "description": "Producer-side session chronicle sharing: bundle + sanitize + archive Claude Code sessions, upload to Cloudflare R2, emit 7-day presigned URL, post to Telegram forum topic. Complements devops-tools:session-chronicle (consumer-side).",
+      "version": "1.0.0",
+      "source": "./plugins/chronicle-share",
+      "category": "devops",
+      "author": {
+        "name": "MD Nasim",
+        "url": "https://github.com/nasimubd"
+      },
+      "keywords": [
+        "chronicle",
+        "session-sharing",
+        "r2",
+        "cloudflare",
+        "telegram",
+        "telethon",
+        "presigned-url",
+        "upload",
+        "jsonl",
+        "sanitizer",
+        "producer",
+        "1password"
+      ],
+      "strict": false
     }
   ]
 }
