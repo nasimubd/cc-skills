@@ -717,6 +717,28 @@
       "strict": false,
       "source": "./plugins/ssh-tunnel-companion",
       "category": "devops"
+    },
+    {
+      "name": "autonomous-loop",
+      "description": "Self-revising LOOP_CONTRACT.md pattern for long-horizon autonomous work. Dynamic pacing via ScheduleWakeup + Monitor fallback. Subscription-safe, complementary to /loop, /schedule, and ru.",
+      "version": "1.0.0",
+      "source": "./plugins/autonomous-loop",
+      "category": "productivity",
+      "author": {
+        "name": "MD Nasim",
+        "url": "https://github.com/nasimubd"
+      },
+      "keywords": [
+        "autonomous",
+        "loop",
+        "long-horizon",
+        "schedule-wakeup",
+        "monitor",
+        "self-revising",
+        "contract",
+        "subscription-safe"
+      ],
+      "strict": false
     }
   ]
 }

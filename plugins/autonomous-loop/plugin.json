@@ -1,0 +1,9 @@
+{
+  "name": "autonomous-loop",
+  "version": "1.0.0",
+  "description": "Self-revising LOOP_CONTRACT.md pattern for long-horizon autonomous work. Dynamic pacing via ScheduleWakeup + Monitor fallback. Subscription-safe, complementary to /loop, /schedule, and ru.",
+  "author": {
+    "name": "MD Nasim",
+    "url": "https://github.com/nasimubd"
+  }
+}
