@@ -2,7 +2,7 @@
 
 > Producer-side session chronicle sharing pipeline. Bundles Claude Code JSONL, sanitizes, uploads to Cloudflare R2, emits a 7-day presigned URL.
 
-**Status:** Phases 0 (R2 provisioning), 1 (bundle), 2 (sanitize), 3 (archive) complete. Phases 4–8 pending.
+**Status:** Phases 0 (R2 provisioning), 1 (bundle), 2 (sanitize), 3 (archive), 4 (upload) complete. Phases 5–8 pending.
 
 **Hub**: [Root CLAUDE.md](../../CLAUDE.md)
 
@@ -234,6 +234,78 @@ Phase 3 flips `archived: true` and adds one new top-level object.
 
 All 32 pass as of 2026-04-21. Verified end-to-end against a real 5.95 MB session: compresses to 1.39 MB (76% ratio), sidecar verifies, archive is a valid tar.gz extractable by `tar -xzf`.
 
+## Phase 4 (upload) — implemented
+
+**Script:** [`scripts/upload.sh`](./scripts/upload.sh)
+**Tests:** [`tests/test-upload.sh`](./tests/test-upload.sh)
+
+### CLI surface
+```
+upload.sh [--dry-run] [--expires-in SECONDS] [--key-prefix PATH] [--force] STAGING_DIR
+```
+- Positional `STAGING_DIR`: the path returned by `archive.sh` (must have `manifest.archived=true`).
+- `--dry-run`: validate + load creds + print the plan; **does not** upload or mutate manifest.
+- `--expires-in SECONDS`: presigned URL TTL. Default `604800` (7 days). Max `604800` — enforced before hitting aws CLI.
+- `--key-prefix PATH`: override the default `chronicles` prefix (useful for scratch / testing).
+- `--force`: bypass the `uploaded=true` idempotency guard.
+
+Stdout: the presigned URL (single line), so Phase 5 orchestrator + Phase 6 Telegram post can consume it via `$(upload.sh ...)`. Stderr: all logs. Exit codes: `0` ok, `1` usage/validation, `2` 1Password credential fetch failed, `3` R2 upload or presign failed.
+
+### Key behaviors
+- **Credentials load from 1Password only** — item `R2 Chronicle Share` in the Personal vault, account `E37RVJRKWZAVFEXY6X2VA4PBWA`. Fetched via 4 `op read` calls into shell-local variables, never exported, never logged, never written to disk.
+- **Env-var injection into aws** — `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + `AWS_DEFAULT_REGION=auto` are set inline per-invocation; `--endpoint-url` is always passed. The aws CLI sees them only for that one command.
+- **Archive integrity verified pre-upload** — `shasum -a 256 -c chronicle-share.tar.gz.sha256` must pass; a tampered tarball is refused before a single byte is uploaded.
+- **Deterministic object key** — `<prefix>/<project_encoded>/<ts>-<short_sha>.tar.gz`, where `ts` is `archive.created_at_utc` with `:` replaced by `-` (URL-safe) and `short_sha` is the first 8 hex chars of `archive.sha256`. Re-running without `--force` refuses; re-running with `--force` overwrites the same key with a fresh presigned URL.
+- **Idempotency guard** — refuses if `manifest.uploaded` is already `true` unless `--force` is passed.
+
+### Object key scheme
+```
+<prefix>/<project_encoded>/<ts>-<short_sha>.tar.gz
+
+Example:
+chronicles/-Users-mdnasim-eon-cc-skills/2026-04-21T11-56-41Z-a628aef3.tar.gz
+```
+
+### Manifest v4 additions
+Phase 4 flips `uploaded: true` and adds one new top-level object.
+
+```jsonc
+{
+  // ... all Phase 1 + 2 + 3 fields unchanged ...
+  "uploaded": true,                                      // was absent/false
+  "upload": {                                            // NEW
+    "bucket":              "nasim-chronicles",
+    "key":                 "chronicles/-Users-.../2026-04-21T11-56-41Z-a628aef3.tar.gz",
+    "endpoint_url":        "https://f0894f5d...r2.cloudflarestorage.com",
+    "uploaded_at_utc":     "2026-04-21T11:57:01Z",
+    "presigned_url":       "https://...?X-Amz-Algorithm=AWS4-HMAC-SHA256&...",
+    "expires_in_seconds":  604800,
+    "expires_at_utc":      "2026-04-28T11:57:01Z"
+  }
+}
+```
+
+### Test coverage
+37-case suite at [`tests/test-upload.sh`](./tests/test-upload.sh), runnable standalone. Ships a PATH shim for `op` and `aws` so no real credentials or network access are required. Shim failure modes are controlled via env vars (`MOCK_OP_FAIL=1`, `MOCK_AWS_CP_FAIL=1`, `MOCK_AWS_PRESIGN_FAIL=1`).
+
+- **Usage + arg parsing (7)** — `--help`, missing `STAGING_DIR`, unknown flag, two positional, `--expires-in` non-numeric/zero/>604800
+- **Validation guards (8)** — nonexistent staging, missing/invalid manifest, `archived=false` refused, missing archive/sidecar, corrupt archive (sidecar mismatch), missing `archive.sha256`
+- **Credential load (1)** — op failure exits 2
+- **Happy path (9)** — exit 0, stdout is presigned URL, manifest has all 7 `upload.*` keys, bucket/key shape/TTL correct, URL matches stdout, `expires_at_utc` = `uploaded_at_utc + 604800`
+- **Idempotency + `--force` (2)** — re-upload refused, `--force` re-uploads with new timestamp
+- **Flag behavior (2)** — `--expires-in 3600` honored, `--key-prefix` honored
+- **AWS failure modes (3)** — `cp` fails → exit 3 + manifest unchanged, `presign` fails → exit 3
+- **`--dry-run` (5)** — exits 0, manifest unchanged, no `upload` subfield, still validates creds, prints plan
+
+All 37 pass as of 2026-04-21.
+
+### Integration test (real R2)
+Verified end-to-end 2026-04-21 against the live `nasim-chronicles` bucket:
+- 1 real Claude Code session (5.95 MB raw) → sanitized → archived (1.50 MB tar.gz after 261 redactions) → uploaded to R2 at ~16 MiB/s
+- Presigned URL (7-day TTL) downloaded anonymously via `curl` → HTTP 200
+- Downloaded bytes match `archive.sha256` exactly (byte-for-byte round-trip confirmed)
+- Test object cleaned up post-verification via `aws s3 rm`; follow-up curl to the same presigned URL returns HTTP 404 (confirms deletion)
+
 ## Key design decisions (to be formalized)
 
 | Decision | Choice | Rationale |
@@ -251,7 +323,7 @@ All 32 pass as of 2026-04-21. Verified end-to-end against a real 5.95 MB session
 - [x] **Phase 1** — `scripts/bundle.sh` (done 2026-04-21; 15/15 tests pass)
 - [x] **Phase 2** — `scripts/sanitize.sh` (done 2026-04-21; 14/14 tests pass including canary with 4 real-format secrets)
 - [x] **Phase 3** — `scripts/archive.sh` (done 2026-04-21; 32/32 tests pass + E2E verified; tar.gz + sidecar SHA; manifest v3)
-- [ ] **Phase 4** — `scripts/upload.sh` (aws s3 cp + presign; add presigned URL + object key to manifest)
+- [x] **Phase 4** — `scripts/upload.sh` (done 2026-04-21; 37/37 tests pass + real R2 upload verified end-to-end; manifest v4; 1Password-backed creds; 7-day presigned URL)
 - [ ] **Phase 5** — `scripts/share.sh` (orchestrator chaining 1→4; first working end-to-end)
 - [ ] **Phase 6** — inline Telethon post (nasim profile → Bruntwork topic 2)
 - [ ] **Phase 7** — full `skills/share/SKILL.md` workflow + `skills/doctor/SKILL.md` preflight
