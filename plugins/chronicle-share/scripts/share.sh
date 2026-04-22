@@ -46,6 +46,9 @@ POST="$HERE/post.sh"
 # --- defaults ---------------------------------------------------------------
 PROJECT=""
 LIMIT=""
+SINCE=""
+UNTIL=""
+ALL_PROJECTS=0
 EXPIRES_IN=""
 KEY_PREFIX=""
 DRY_RUN_UPLOAD=0
@@ -66,8 +69,15 @@ Run the full chronicle-share pipeline (bundle → sanitize → archive → uploa
 → post) and emit the 7-day presigned URL on stdout.
 
 Options (forwarded to bundle.sh):
-  --project PATH        Project whose sessions to share (default: $PWD).
-  --limit N             Bundle only N newest sessions by mtime (0 = all).
+  --project PATH        Single project whose sessions to share (default: $PWD).
+                        Mutually exclusive with --all-projects.
+  --all-projects        Bundle sessions from every Claude Code project under
+                        ~/.claude/projects/. Combine with --since/--until.
+  --since DATE          Only include sessions with mtime >= DATE (inclusive).
+                        Any form 'find -newermt' accepts (YYYY-MM-DD etc.).
+  --until DATE          Only include sessions with mtime < DATE (exclusive).
+  --limit N             Bundle only N newest sessions by mtime across the
+                        selected scope (0 = all). Applied after --since/--until.
 
 Options (forwarded to upload.sh):
   --expires-in SECONDS  Presigned URL TTL (default: 604800 = 7 days, max 604800).
@@ -96,6 +106,9 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project)          PROJECT="${2:?--project requires a path}";         shift 2 ;;
+    --all-projects)     ALL_PROJECTS=1; shift ;;
+    --since)            SINCE="${2:?--since requires a date}";              shift 2 ;;
+    --until)            UNTIL="${2:?--until requires a date}";              shift 2 ;;
     --limit)            LIMIT="${2:?--limit requires a number}";           shift 2 ;;
     --expires-in)       EXPIRES_IN="${2:?--expires-in requires SECONDS}";  shift 2 ;;
     --key-prefix)       KEY_PREFIX="${2:?--key-prefix requires a path}";   shift 2 ;;
@@ -128,8 +141,11 @@ done
 
 # --- assemble forwarded args -----------------------------------------------
 bundle_args=()
-[[ -n "$PROJECT" ]] && bundle_args+=(--project "$PROJECT")
-[[ -n "$LIMIT"   ]] && bundle_args+=(--limit   "$LIMIT")
+[[ -n "$PROJECT"     ]] && bundle_args+=(--project "$PROJECT")
+[[ "$ALL_PROJECTS" -eq 1 ]] && bundle_args+=(--all-projects)
+[[ -n "$SINCE"       ]] && bundle_args+=(--since "$SINCE")
+[[ -n "$UNTIL"       ]] && bundle_args+=(--until "$UNTIL")
+[[ -n "$LIMIT"       ]] && bundle_args+=(--limit "$LIMIT")
 
 upload_args=()
 [[ -n "$EXPIRES_IN" ]] && upload_args+=(--expires-in "$EXPIRES_IN")

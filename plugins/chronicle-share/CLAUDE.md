@@ -2,7 +2,7 @@
 
 > Producer-side session chronicle sharing pipeline. Bundles Claude Code JSONL, sanitizes, uploads to Cloudflare R2, emits a 7-day presigned URL.
 
-**Status:** Phases 0–8 complete (R2, bundle, sanitize, archive, upload, orchestrator, Telegram post, skills + doctor, marketplace registration). Plugin is feature-complete on the nasimubd fork; a consolidated upstream PR to terrylica/cc-skills remains the final step.
+**Status:** Phases 0–9 complete (R2, bundle, sanitize, archive, upload, orchestrator, Telegram post, skills + doctor, marketplace registration, multi-project + date-range filtering). Plugin is feature-complete on the nasimubd fork; a consolidated upstream PR to terrylica/cc-skills remains the final step.
 
 **Hub**: [Root CLAUDE.md](../../CLAUDE.md)
 
@@ -520,6 +520,7 @@ The skill body has a `common failures → fixes` table so Claude can automatical
 - [x] **Phase 6** — `scripts/post.sh` (done 2026-04-21; 31/31 tests pass + real Bruntwork topic 2 post verified as msg 347; Telethon via uv; manifest v5)
 - [x] **Phase 7** — `skills/share/SKILL.md` + `skills/doctor/SKILL.md` + `scripts/doctor.sh` (done 2026-04-21; stub replaced with 150-line functional skill; 22-check preflight verified 22/22 against live system)
 - [x] **Phase 8** — marketplace registration (done 2026-04-22; `chronicle-share` entry appended to `.claude-plugin/marketplace.json` as the 32nd plugin on nasimubd fork, `devops` category, version `1.0.0`, 12 keywords; validator passes 32/32 registered, 203 skills; plugin.json bumped 0.0.1 → 1.0.0; next step is consolidated upstream PR to terrylica/cc-skills)
+- [x] **Phase 9** — multi-project + date-range filtering (done 2026-04-22; bundle.sh gained `--since DATE`, `--until DATE`, `--all-projects`; share.sh passes them through; manifest gained `filters` block, per-session `project_path`/`project_encoded`, and source `mode`+`project_count`+`project_encodings` in all-projects mode; multi-project R2 key uses `all-projects` segment; all 129 downstream tests still pass; live verified with 21 sessions across 5 projects since 2026-04-16, 890 redactions, 10.42 MB archive)
 
 ## Boundary with upstream cc-skills
 
