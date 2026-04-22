@@ -29,6 +29,51 @@ asyncio.run(c())
 
 If `EXPIRED`, run `/tlg:setup` first (uses 3-step non-interactive auth pattern).
 
+## Supergroup-First Methodology
+
+The Bruntwork group (`-1003958083153`) is a **supergroup with Topics**. All messages to this group MUST target a specific topic — never post to the bare supergroup without a topic target.
+
+**Why supergroup over basic chat:**
+
+- **Server-global message IDs.** Every member sees the same `id=N` for each message. Both sides' Claude Code resolves citations identically — no viewer-qualifier needed, no cross-boundary ambiguity.
+- **Topic namespaces.** Policies don't get buried between daily check-ins. Each subject has its own searchable thread with independent pins.
+- **AI-agent addressability.** Claude Code can target reads/writes to specific topics via `reply_to_msg_id`, enabling precise routing: "post this bug report to Bug Reports" or "search Policies for the carve-out decision."
+- **Emoji reactions as acknowledgment signals.** Reactions are programmatically readable via `message.reactions.results` — enables lightweight ACK checking without requiring a text reply.
+
+**Topic selection discipline:** When composing a message, select the most specific topic from the Topic Registry below. Use General only as a fallback. Never cross-post the same message to multiple topics.
+
+**Citation convention:** Bare `id=N` citations resolve identically for every member. When referencing a prior message, cite its ID. Claude Code on both sides can look it up autonomously via `client.get_messages(supergroup_id, ids=N)`.
+
+**Sending to a topic via tg-cli.py:** use the `--reply-to` flag with the topic's root_msg_id. See the Topic Registry section below for root_msg_id values.
+
+```bash
+uv run --python 3.13 "$SCRIPT" send --html --reply-to 5 -1003958083153 "<b>Policy update</b> ..."
+```
+
+**Sending to a topic via Direct Telethon:**
+
+```python
+await client.send_message(-1003958083153, message, parse_mode="html", reply_to=TOPIC_ROOT_ID)
+```
+
+## Auto-split for long messages
+
+Telegram's hard limit is 4096 post-parsing chars per message. **tg-cli.py `send` and `draft` both auto-split** messages exceeding ~3900 plain chars into multiple sequential posts, preserving HTML formatting and section structure.
+
+**Split algorithm**: splits at the finest-grained safe boundary that fits all chunks:
+
+1. `\n\n━━━━━━━━━━━━━━\n\n` (major section separator, preferred)
+2. `\n━━━━━━━━━━━━━━\n` (section separator)
+3. `\n\n` (paragraph break)
+4. `\n` (line break)
+5. Hard character split (last resort — prints warning; may break tags)
+
+Each continuation chunk gets a `<i>(Part N/M)</i>` header prepended so recipients see the sequence clearly. All parts share the same `--reply-to` target so a multi-part post stays in one topic thread.
+
+**You do NOT need to manually split messages anymore.** Compose the full HTML as one string, pass to `send`, and the splitter handles it. The "Direct Telethon" pattern below is now only needed for file attachments, multi-message sequences with different content per message, or edit/delete operations.
+
+**Size-aware authoring guidance**: prefer messages that fit in one post (≤ 3900 plain chars) — splits add visual overhead with part headers. If a message is naturally larger (e.g., a pinned reference), let the splitter do its job. Structure with `━━━━━━━━━━━━━━` separators so split boundaries land cleanly between logical sections.
+
 ## Usage: tg-cli.py (when session is valid)
 
 > **When in doubt, USE `--html`.** If your message contains ANY of: `<b>`, `<i>`, `<code>`, `<pre>`, `<a href>`, bold headers, inline code, or markdown-style `**bold**` / `` `code` ``, you MUST either pass `--html` (and translate markdown → HTML tags first) or strip the decoration. Sending Telegram-style markdown without `--html` renders the asterisks and backticks literally to the recipient. For multi-section messages with headers, separators, and code spans — **always** use `--html`.
@@ -43,23 +88,23 @@ SCRIPT="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/cc-skills/plugi
 uv run --python 3.13 "$SCRIPT" send @username "Hello"
 
 # HTML formatting — the recommended default for any structured message
-uv run --python 3.13 "$SCRIPT" send --html -5111414203 "<b>Bold header</b>
+uv run --python 3.13 "$SCRIPT" send --html -1003958083153 "<b>Bold header</b>
 
 Body with <code>inline code</code> and <a href='https://example.com'>a link</a>."
 
 # By chat ID (groups use negative IDs)
-uv run --python 3.13 "$SCRIPT" send -5111414203 "Hello group"
+uv run --python 3.13 "$SCRIPT" send -1003958083153 "Hello group"
 
 # Specific profile
 uv run --python 3.13 "$SCRIPT" -p missterryli send @username "Hello"
 SEND_EOF
 ```
 
-**Long HTML messages**: when the body has multiple paragraphs, bullets, separators, or code blocks, prefer the "Direct Telethon" pattern below — it avoids shell-quoting hell on multi-line bodies and is what actually works reliably for operator-written messages with structure.
+**Long HTML messages**: `tg-cli.py send --html` auto-splits at the 3900-plain-char threshold. Compose the full HTML as one string and let the splitter handle it. See "Auto-split for long messages" above.
 
-## Usage: Direct Telethon (for multi-message sequences, files, or when tg-cli.py fails)
+## Usage: Direct Telethon (for file attachments, multi-message sequences with varying content, edits/deletes)
 
-When you need multi-message sequences, file attachments with captions, or tg-cli.py fails, use Telethon directly. For simple HTML messages, prefer `tg-cli.py send --html` above:
+Direct Telethon is now only needed for cases `tg-cli.py send` cannot cover: file attachments with captions, sequences of differently-structured messages, message edits, or deletions. Long single-body messages are handled by `tg-cli.py send` auto-split.
 
 ```bash
 VIRTUAL_ENV="" uv run --python 3.13 --no-project --with telethon python3 << 'PYEOF'
@@ -69,7 +114,7 @@ from telethon import TelegramClient
 SESSION = os.path.expanduser("~/.local/share/telethon/eon")
 API_ID = 18256514
 API_HASH = "4b812166a74fbd4eaadf5c4c1c855926"
-CHAT_ID = -5111414203  # negative for groups
+CHAT_ID = -1003958083153  # negative for groups
 
 MSG = """<b>Bold title</b>
 <i>Italic subtitle</i>
@@ -103,7 +148,7 @@ from telethon import TelegramClient
 SESSION = os.path.expanduser("~/.local/share/telethon/eon")
 API_ID = 18256514
 API_HASH = "4b812166a74fbd4eaadf5c4c1c855926"
-CHAT_ID = -5111414203
+CHAT_ID = -1003958083153
 
 CAPTION = """<b>File Title</b>
 
@@ -130,7 +175,7 @@ from telethon import TelegramClient
 SESSION = os.path.expanduser("~/.local/share/telethon/eon")
 API_ID = 18256514
 API_HASH = "4b812166a74fbd4eaadf5c4c1c855926"
-CHAT_ID = -5111414203
+CHAT_ID = -1003958083153
 
 async def edit():
     client = TelegramClient(SESSION, API_ID, API_HASH)
@@ -222,9 +267,27 @@ Emojis are supported but user may prefer decorations without emojis — use `<pr
 
 ## Known Group Chat IDs
 
-| Group                  | Chat ID     |
-| ---------------------- | ----------- |
-| Terry & MD (Bruntwork) | -5111414203 |
+| Group                  | Chat ID        | Type                                                           |
+| ---------------------- | -------------- | -------------------------------------------------------------- |
+| Terry & MD (Bruntwork) | -1003958083153 | Supergroup                                                     |
+| Terry & MD (Bruntwork) | -1003958083153 | Legacy basic chat (pre-2026-04-16, read-only for old messages) |
+
+## Topic Registry (Bruntwork Supergroup)
+
+To send a message to a specific topic, pass `reply_to=<root_msg_id>` in `send_message()` or use `--reply-to` in tg-cli.py.
+
+| Topic                      | root_msg_id | Scope                                                  |
+| -------------------------- | ----------- | ------------------------------------------------------ |
+| General                    | 1           | Catch-all, quick questions                             |
+| Assignments & Deliverables | 2           | Task definitions, PR reviews, Block check-ins          |
+| Daily Operations           | 3           | Commencement/disembarkation, shift status              |
+| Onboarding & Access        | 4           | Repo access, SSH/Tailscale, tool provisioning          |
+| Policy & Standards         | 5           | cc-skills carve-out, conventions, discipline           |
+| Bug Reports & Incidents    | 6           | Merge conflicts, hook bugs, pipeline breaks            |
+| Tool Setup & Config        | 7           | ccmax-monitor, FlowSurface, chronicle pipeline         |
+| Knowledge Base & Learning  | 8           | KB pages, research material, skill references          |
+| HR & Scheduling            | 9           | Shift hours, Bruntwork coordination                    |
+| Session Monitor            | 185         | Real-time Claude Code session summaries (CC Nasim Bot) |
 
 ## Anti-Patterns (NEVER DO)
 

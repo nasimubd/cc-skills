@@ -2,14 +2,14 @@
 /**
  * Kokoro TTS Client + Telegram Voice Message
  *
- * Generates podcast-style audio via Kokoro TTS on bigblack (Tailscale),
+ * Generates podcast-style audio via Kokoro TTS on littleblack (Tailscale primary, ZeroTier legacy at 172.25.236.1),
  * converts WAV -> OGG/Opus via ffmpeg, sends as Telegram voice message.
  */
 
 import { auditLog } from "./audit.js";
 import { unlinkSync } from "fs";
 
-const KOKORO_HOST = process.env.KOKORO_HOST ?? "bigblack";
+const KOKORO_HOST = process.env.KOKORO_HOST ?? "littleblack";
 const KOKORO_PORT = process.env.KOKORO_PORT ?? "8090";
 const KOKORO_URL = `http://${KOKORO_HOST}:${KOKORO_PORT}/tts`;
 const HEALTH_URL = `http://${KOKORO_HOST}:${KOKORO_PORT}/health`;

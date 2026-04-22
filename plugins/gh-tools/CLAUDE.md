@@ -164,13 +164,12 @@ No individual IDs need to be listed separately — the full paths are strictly m
 
 ## Skills
 
-| Skill               | Purpose                                                      |
-| ------------------- | ------------------------------------------------------------ |
-| `pr-gfm-validator`  | Validate and auto-fix GFM links in PR bodies                 |
-| `issue-create`      | Create issues with AI labeling (256-char titles)             |
-| `issues-workflow`   | Issues-first workflow, sub-issues, issue-branch-PR lifecycle |
-| `research-archival` | Scrape AI research URLs, archive with frontmatter + Issues   |
-| `fork-intelligence` | Discover valuable fork divergence beyond stars               |
+- [fork-intelligence](./skills/fork-intelligence/SKILL.md)
+- [hooks](./skills/hooks/SKILL.md)
+- [issue-create](./skills/issue-create/SKILL.md)
+- [issues-workflow](./skills/issues-workflow/SKILL.md)
+- [pr-gfm-validator](./skills/pr-gfm-validator/SKILL.md)
+- [research-archival](./skills/research-archival/SKILL.md)
 
 ## GitHub Operations Policy
 
@@ -182,8 +181,6 @@ No individual IDs need to be listed separately — the full paths are strictly m
 
 - **Forbidden**: pytest, jest, cargo test, ruff, eslint, clippy, prettier, mypy
 - **Allowed**: semantic-release, CodeQL, Dependabot, deployment
-
-**Reference**: [GitHub Actions ADR](https://github.com/terrylica/cc-skills/blob/main/docs/adr/2025-11-21-github-actions-no-testing-linting.md)
 
 ## GitHub Issues as Insight Repository
 
@@ -239,6 +236,14 @@ GH_ACCOUNT = "terrylica"
 ```
 
 **ADR**: [/docs/adr/2026-01-12-mise-gh-cli-incompatibility.md](/docs/adr/2026-01-12-mise-gh-cli-incompatibility.md)
+
+## Environment Variables
+
+| Variable     | Required | Description                                                                              |
+| ------------ | -------- | ---------------------------------------------------------------------------------------- |
+| `GH_TOKEN`   | Yes      | GitHub PAT (`ghp_...` / `github_pat_...`); read from mise per-project config             |
+| `GH_ACCOUNT` | Yes      | GitHub username for the active token; used by identity guard to verify ownership         |
+| `GH_ORGS`    | No       | Comma-separated list of orgs the current account may write to (identity guard allowlist) |
 
 ## Process Safety
 

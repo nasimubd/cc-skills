@@ -17,7 +17,7 @@
 ## Installation
 
 ```bash
-claude plugin marketplace add nasimubd/cc-skills
+claude plugin marketplace add terrylica/cc-skills
 claude plugin install autonomous-loop@cc-skills
 ```
 
@@ -54,7 +54,7 @@ Three features distinguish this pattern from a plain `/loop`:
 
 ## Motivating example
 
-This plugin was extracted from a 37-iteration autonomous quant-research campaign on Open Deviation Bars (ODB). The case study with verbatim contract snapshots lives in the upstream repository (`terrylica/cc-skills`) and is not mirrored in this fork.
+This plugin was extracted from a 37-iteration autonomous quant-research campaign on Open Deviation Bars (ODB). See [docs/design/2026-04-20-autonomous-loop/spec.md](../../docs/design/2026-04-20-autonomous-loop/spec.md) for the full case study with verbatim contract snapshots.
 
 ## Skills
 

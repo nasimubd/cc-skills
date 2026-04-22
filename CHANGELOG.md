@@ -1,3 +1,502 @@
+# [16.0.0](https://github.com/terrylica/cc-skills/compare/v15.0.0...v16.0.0) (2026-04-22)
+
+
+* fix(autonomous-loop)!: waker-tier model — never use ScheduleWakeup as pacing ([1cf0915](https://github.com/terrylica/cc-skills/commit/1cf0915ffcb21420e89d346b836b9318d9dc7fa9))
+
+
+### Features
+
+* **macro-keyboard:** add plugin for 3-key USB-C/Bluetooth macro pad on macOS ([8ef6899](https://github.com/terrylica/cc-skills/commit/8ef6899e756ebc5ee80155b7809111e84433bb26))
+
+
+### BREAKING CHANGES
+
+* the `Nothing in flight, self-directed work continues`
+row is removed from the pacing table. Contracts that interpreted this
+row as "schedule 60s wake-up between iterations" will now correctly
+chain in-turn. No action needed from users — the template is
+idempotent on next firing.
+
+Research basis: Anthropic's own `/loop` docs (self-paced interval is
+for continuous work; ScheduleWakeup is for external blockers), plus
+durable-execution patterns from Temporal / Restate / LangGraph
+(event-driven primary, timer-only-as-safety-net).
+
+# [15.0.0](https://github.com/terrylica/cc-skills/compare/v14.0.0...v15.0.0) (2026-04-22)
+
+
+* feat(release)!: add Phase 1.5 pre-sync to release:full ([8d66160](https://github.com/terrylica/cc-skills/commit/8d66160b5e65202ad54ef060b2a905e4f405d3c5))
+
+
+### Bug Fixes
+
+* **autonomous-loop:** use CLAUDE_PLUGIN_ROOT + add parallel-secondary-work clause ([e034cf7](https://github.com/terrylica/cc-skills/commit/e034cf7e8a4eedef2562043e9ef8d1afaf06415a)), closes [#6](https://github.com/terrylica/cc-skills/issues/6) [#7](https://github.com/terrylica/cc-skills/issues/7)
+
+
+### BREAKING CHANGES
+
+* release:full now runs six phases instead of five.
+Custom downstream invocations that replicate individual phases should
+add release:presync between preflight and version, or continue to call
+release:full as the single entry point.
+
+# [14.0.0](https://github.com/terrylica/cc-skills/compare/v13.0.0...v14.0.0) (2026-04-21)
+
+
+* feat(itp)!: remove release and semantic-release skills ([ccb91f5](https://github.com/terrylica/cc-skills/commit/ccb91f58d2a6b0dc219e16d181734d91811f04ec))
+
+
+### Bug Fixes
+
+* **release:** drop generateNotesCmd pointing at deleted script ([bac5421](https://github.com/terrylica/cc-skills/commit/bac54213f343b62e86e9a707437d1ce366d833be))
+
+
+### Features
+
+* **chronicle-share:** Phase 1 — bundle.sh + manifest v1 ([7ec85c0](https://github.com/terrylica/cc-skills/commit/7ec85c06db6d0859da759005996de35bc23092b5))
+* **chronicle-share:** Phase 2 — sanitize.sh + manifest v2 additions ([f1171d7](https://github.com/terrylica/cc-skills/commit/f1171d74fa1e65907d815325f83167af0026ebef))
+* **chronicle-share:** scaffold plugin for R2 producer pipeline ([6885ab7](https://github.com/terrylica/cc-skills/commit/6885ab797eadd8d90b7fce5c07a10fc48ab2a3bb))
+
+
+### BREAKING CHANGES
+
+* The `itp:release` and `itp:semantic-release` skills
+have been removed. `/itp:release` no longer exists.
+
+Migration: use `/mise:run-full-release` instead. Every repo owns its
+release DAG in `.mise/tasks/release/`, which is where the logic
+actually belongs — the two itp skills had drifted into either thin
+delegators to mise or reference material duplicated across other
+skills.
+
+Purge includes:
+- plugins/itp/skills/release/ (entire directory)
+- plugins/itp/skills/semantic-release/ (entire directory, incl. templates,
+  references, scripts, and historical audit report)
+
+Cross-reference cleanup:
+- plugins/itp/CLAUDE.md: drop Skills and Commands entries; update
+  Phase 3 description to point at the mise release pipeline
+- plugins/itp/skills/impl-standards/SKILL.md + references: drop
+  semantic-release row from the Related Skills table; update
+  constants-management to refer to mise release pipeline
+- plugins/itp/skills/mise-configuration/references/github-tokens.md:
+  drop semantic-release link
+- plugins/itp/skills/mise-tasks/references/release-workflow-patterns.md:
+  drop semantic-release from Related header
+- plugins/itp/skills/pypi-doppler/SKILL.md: drop semantic-release
+  bullet from the Related Skills list
+- plugins/plugin-dev/skills/create/SKILL.md: replace two
+  Skill(itp:semantic-release) references with Skill(mise:run-full-release)
+- plugins/plugin-dev/skills/skill-architecture/references/scripts-reference.md:
+  replace "Semantic Release" section with "Release Pipeline" pointing
+  at the mise skill
+- README.md: update docs examples, plugin-dev dependency row, and
+  the itp plugin summary to drop the removed skills
+- docs/discovery-architecture.md + docs/metadata-linking-framework.md:
+  replace removed-skill examples (keywords, frontmatter samples,
+  cross-reference tables) with still-existing skills
+
+CHANGELOG.md historical entries referencing these skills are kept
+intact — history is immutable.
+
+SRED-Type: experimental-development
+
+# [13.0.0](https://github.com/terrylica/cc-skills/compare/v12.52.0...v13.0.0) (2026-04-20)
+
+
+* feat(autonomous-loop)!: remove ru plugin superseded by autonomous-loop ([f076802](https://github.com/terrylica/cc-skills/commit/f076802cd553c8ae7c92ee5b002480d76a970cdb))
+
+
+### BREAKING CHANGES
+
+* /ru:* commands removed. Migrate to /autonomous-loop:*
+per docs/adr/2026-04-20-remove-ru-plugin.md migration table. Advanced
+features (forbid/encourage/wizard) have no direct replacement and
+require manual contract editing.
+
+
+
+
+
+---
+
+## Documentation Changes
+
+## Architecture Decisions
+
+### ADRs
+
+| Status | ADR | Change |
+|--------|-----|--------|
+| unknown | [Remove `ru` plugin — superseded by `autonomous-loop`](https://github.com/terrylica/cc-skills/blob/main/docs/adr/2026-04-20-remove-ru-plugin.md) | new (+63) |
+
+## Plugin Documentation
+
+### Skills
+
+<details>
+<summary><strong>ru</strong> (9 changes)</summary>
+
+- [audit now](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/audit-now/SKILL.md) - deleted
+- [encourage](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/encourage/SKILL.md) - deleted
+- [forbid](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/forbid/SKILL.md) - deleted
+- [hooks](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/hooks/SKILL.md) - deleted
+- [settings](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/settings/SKILL.md) - deleted
+- [start](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/start/SKILL.md) - deleted
+- [status](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/status/SKILL.md) - deleted
+- [stop](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/stop/SKILL.md) - deleted
+- [wizard](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/wizard/SKILL.md) - deleted
+
+</details>
+
+
+### Plugin READMEs
+
+- [ru](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/README.md) - deleted
+
+### Skill References
+
+<details>
+<summary><strong>ru/audit-now</strong> (1 file)</summary>
+
+- [Evolution Log](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/audit-now/references/evolution-log.md) - deleted
+
+</details>
+
+<details>
+<summary><strong>ru/encourage</strong> (1 file)</summary>
+
+- [Evolution Log](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/encourage/references/evolution-log.md) - deleted
+
+</details>
+
+<details>
+<summary><strong>ru/forbid</strong> (1 file)</summary>
+
+- [Evolution Log](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/forbid/references/evolution-log.md) - deleted
+
+</details>
+
+<details>
+<summary><strong>ru/hooks</strong> (1 file)</summary>
+
+- [Evolution Log](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/hooks/references/evolution-log.md) - deleted
+
+</details>
+
+<details>
+<summary><strong>ru/settings</strong> (1 file)</summary>
+
+- [Evolution Log](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/settings/references/evolution-log.md) - deleted
+
+</details>
+
+<details>
+<summary><strong>ru/start</strong> (1 file)</summary>
+
+- [Evolution Log](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/start/references/evolution-log.md) - deleted
+
+</details>
+
+<details>
+<summary><strong>ru/status</strong> (1 file)</summary>
+
+- [Evolution Log](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/status/references/evolution-log.md) - deleted
+
+</details>
+
+<details>
+<summary><strong>ru/stop</strong> (1 file)</summary>
+
+- [Evolution Log](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/stop/references/evolution-log.md) - deleted
+
+</details>
+
+<details>
+<summary><strong>ru/wizard</strong> (1 file)</summary>
+
+- [Evolution Log](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/skills/wizard/references/evolution-log.md) - deleted
+
+</details>
+
+
+## Other Documentation
+
+### Other
+
+- [CLAUDE](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/CLAUDE.md) - deleted
+- [ralph-unified](https://github.com/terrylica/cc-skills/blob/v12.52.0/plugins/ru/hooks/templates/ralph-unified.md) - deleted
+
+# [12.52.0](https://github.com/terrylica/cc-skills/compare/v12.51.0...v12.52.0) (2026-04-20)
+
+
+### Features
+
+* **autonomous-loop:** add plugin for self-revising LOOP_CONTRACT.md pattern ([7194e28](https://github.com/terrylica/cc-skills/commit/7194e2831c108252aa0c9829577afd6e718da01c))
+* **plugins:** add crucible - self-evolving research methodology plugin ([deb9aab](https://github.com/terrylica/cc-skills/commit/deb9aab38df17ae091ee137a51bcfce821b9cc53))
+
+
+
+
+
+---
+
+## Documentation Changes
+
+## Architecture Decisions
+
+### ADRs
+
+| Status | ADR | Change |
+|--------|-----|--------|
+| unknown | [autonomous-loop plugin — self-revising execution contract for long-horizon autonomous work](https://github.com/terrylica/cc-skills/blob/main/docs/adr/2026-04-20-autonomous-loop.md) | new (+114) |
+
+### Design Specs
+
+- [Design Spec: autonomous-loop plugin](https://github.com/terrylica/cc-skills/blob/main/docs/design/2026-04-20-autonomous-loop/spec.md) - new (+105)
+
+## Plugin Documentation
+
+### Skills
+
+<details>
+<summary><strong>autonomous-loop</strong> (3 changes)</summary>
+
+- [start](https://github.com/terrylica/cc-skills/blob/main/plugins/autonomous-loop/skills/start/SKILL.md) - new (+112)
+- [status](https://github.com/terrylica/cc-skills/blob/main/plugins/autonomous-loop/skills/status/SKILL.md) - new (+112)
+- [stop](https://github.com/terrylica/cc-skills/blob/main/plugins/autonomous-loop/skills/stop/SKILL.md) - new (+109)
+
+</details>
+
+<details>
+<summary><strong>crucible</strong> (5 changes)</summary>
+
+- [crucible-navigator](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/skills/00-navigator/SKILL.md) - new (+96)
+- [crucible-research-foundations](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/skills/a-research-foundations/SKILL.md) - new (+189)
+- [crucible-investigation-methodology](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/skills/b-investigation-methodology/SKILL.md) - new (+189)
+- [crucible-meta-governance](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/skills/c-meta-governance/SKILL.md) - new (+168)
+- [crucible-emergent-resurrection](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/skills/d-emergent-resurrection/SKILL.md) - new (+218)
+
+</details>
+
+
+### Plugin READMEs
+
+- [autonomous-loop](https://github.com/terrylica/cc-skills/blob/main/plugins/autonomous-loop/README.md) - new (+79)
+- [crucible](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/README.md) - new (+70)
+
+### Skill References
+
+<details>
+<summary><strong>crucible/00-navigator</strong> (1 file)</summary>
+
+- [evolution-log: 00-navigator](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/skills/00-navigator/references/evolution-log.md) - new (+29)
+
+</details>
+
+<details>
+<summary><strong>crucible/a-research-foundations</strong> (1 file)</summary>
+
+- [evolution-log: a-research-foundations](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/skills/a-research-foundations/references/evolution-log.md) - new (+22)
+
+</details>
+
+<details>
+<summary><strong>crucible/b-investigation-methodology</strong> (1 file)</summary>
+
+- [evolution-log: b-investigation-methodology](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/skills/b-investigation-methodology/references/evolution-log.md) - new (+22)
+
+</details>
+
+<details>
+<summary><strong>crucible/c-meta-governance</strong> (1 file)</summary>
+
+- [evolution-log: c-meta-governance](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/skills/c-meta-governance/references/evolution-log.md) - new (+22)
+
+</details>
+
+<details>
+<summary><strong>crucible/d-emergent-resurrection</strong> (1 file)</summary>
+
+- [evolution-log: d-emergent-resurrection](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/skills/d-emergent-resurrection/references/evolution-log.md) - new (+22)
+
+</details>
+
+
+## Other Documentation
+
+### Other
+
+- [autonomous-loop Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/autonomous-loop/CLAUDE.md) - new (+77)
+- [<PROJECT OR CAMPAIGN TITLE>](https://github.com/terrylica/cc-skills/blob/main/plugins/autonomous-loop/templates/LOOP_CONTRACT.template.md) - new (+190)
+- [crucible — Plugin Navigator](https://github.com/terrylica/cc-skills/blob/main/plugins/crucible/CLAUDE.md) - new (+104)
+
+# [12.51.0](https://github.com/terrylica/cc-skills/compare/v12.50.1...v12.51.0) (2026-04-17)
+
+
+### Features
+
+* **tlg:** auto-split long messages + --reply-to flag ([fe63231](https://github.com/terrylica/cc-skills/commit/fe6323161f5b67b5869fdd52452ebd88fb8ddb3e))
+
+
+
+
+
+---
+
+## Documentation Changes
+
+## Plugin Documentation
+
+### Skills
+
+<details>
+<summary><strong>tlg</strong> (2 changes)</summary>
+
+- [draft-message](https://github.com/terrylica/cc-skills/blob/main/plugins/tlg/skills/draft-message/SKILL.md) - updated (+1)
+- [send-message](https://github.com/terrylica/cc-skills/blob/main/plugins/tlg/skills/send-message/SKILL.md) - updated (+26/-4)
+
+</details>
+
+## [12.50.1](https://github.com/terrylica/cc-skills/compare/v12.50.0...v12.50.1) (2026-04-17)
+
+
+
+
+
+---
+
+## Documentation Changes
+
+## Plugin Documentation
+
+### Plugin READMEs
+
+- [quant-research](https://github.com/terrylica/cc-skills/blob/main/plugins/quant-research/README.md) - updated (+14/-10)
+
+## Other Documentation
+
+### Other
+
+- [agent-reach Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/agent-reach/CLAUDE.md) - new (+24)
+- [asciinema-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/asciinema-tools/CLAUDE.md) - updated (+24/-8)
+- [Cal.com Commander Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/calcom-commander/CLAUDE.md) - updated (+9)
+- [Plugin Development Guide](https://github.com/terrylica/cc-skills/blob/main/plugins/CLAUDE.md) - updated (+34/-29)
+- [cli-anything Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/cli-anything/CLAUDE.md) - updated (+4)
+- [devops-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/devops-tools/CLAUDE.md) - updated (+29/-19)
+- [doc-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/doc-tools/CLAUDE.md) - updated (+10/-12)
+- [dotfiles-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/dotfiles-tools/CLAUDE.md) - updated (+3/-4)
+- [gemini-deep-research Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/gemini-deep-research/CLAUDE.md) - updated (+4)
+- [gh-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/gh-tools/CLAUDE.md) - updated (+14/-9)
+- [git-town-workflow Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/git-town-workflow/CLAUDE.md) - updated (+7)
+- [gitnexus-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/gitnexus-tools/CLAUDE.md) - updated (+4/-6)
+- [Gmail Commander Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/gmail-commander/CLAUDE.md) - updated (+22/-10)
+- [itp-hooks Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/itp-hooks/CLAUDE.md) - updated (+13/-4)
+- [itp Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/itp/CLAUDE.md) - updated (+15/-17)
+- [kokoro-tts Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/kokoro-tts/CLAUDE.md) - updated (+11)
+- [link-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/link-tools/CLAUDE.md) - updated (+2/-4)
+- [media-tools](https://github.com/terrylica/cc-skills/blob/main/plugins/media-tools/CLAUDE.md) - updated (+1/-3)
+- [mise Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/mise/CLAUDE.md) - updated (+7)
+- [mql5 Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/mql5/CLAUDE.md) - updated (+6/-6)
+- [plugin-dev Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/plugin-dev/CLAUDE.md) - updated (+3/-4)
+- [productivity-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/productivity-tools/CLAUDE.md) - updated (+8/-9)
+- [quality-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/quality-tools/CLAUDE.md) - updated (+11/-12)
+- [quant-research Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/quant-research/CLAUDE.md) - updated (+8/-9)
+- [ru Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/ru/CLAUDE.md) - updated (+12)
+- [rust-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/rust-tools/CLAUDE.md) - updated (+2/-4)
+- [statusline-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/statusline-tools/CLAUDE.md) - updated (+4/-6)
+- [Telegram CLI Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/tlg/CLAUDE.md) - updated (+19)
+- [tts-tg-sync Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/tts-tg-sync/CLAUDE.md) - updated (+13)
+
+# [12.50.0](https://github.com/terrylica/cc-skills/compare/v12.49.1...v12.50.0) (2026-04-17)
+
+
+### Features
+
+* **itp-hooks:** allow maturin pyproject.toml co-located with Cargo.toml ([a052b6c](https://github.com/terrylica/cc-skills/commit/a052b6c57ab3082181f131efa5d59b80e39356fb))
+* **tlg:** migrate Bruntwork to supergroup with topics ([945c009](https://github.com/terrylica/cc-skills/commit/945c009bdb63bb586d20b0e5acd1f01a62a3f8c1))
+
+
+
+
+
+---
+
+## Documentation Changes
+
+## Plugin Documentation
+
+### Skills
+
+<details>
+<summary><strong>devops-tools</strong> (2 changes)</summary>
+
+- [firecrawl-research-patterns](https://github.com/terrylica/cc-skills/blob/main/plugins/devops-tools/skills/firecrawl-research-patterns/SKILL.md) - updated (+15/-15)
+- [pueue-job-orchestration](https://github.com/terrylica/cc-skills/blob/main/plugins/devops-tools/skills/pueue-job-orchestration/SKILL.md) - updated (+5/-4)
+
+</details>
+
+<details>
+<summary><strong>gh-tools</strong> (1 change)</summary>
+
+- [research-archival](https://github.com/terrylica/cc-skills/blob/main/plugins/gh-tools/skills/research-archival/SKILL.md) - updated (+9/-9)
+
+</details>
+
+<details>
+<summary><strong>rust-tools</strong> (2 changes)</summary>
+
+- [rust-dependency-audit](https://github.com/terrylica/cc-skills/blob/main/plugins/rust-tools/skills/rust-dependency-audit/SKILL.md) - updated (+1/-1)
+- [rust-sota-arsenal](https://github.com/terrylica/cc-skills/blob/main/plugins/rust-tools/skills/rust-sota-arsenal/SKILL.md) - updated (+1/-1)
+
+</details>
+
+<details>
+<summary><strong>tlg</strong> (3 changes)</summary>
+
+- [draft-message](https://github.com/terrylica/cc-skills/blob/main/plugins/tlg/skills/draft-message/SKILL.md) - updated (+2/-2)
+- [send-media](https://github.com/terrylica/cc-skills/blob/main/plugins/tlg/skills/send-media/SKILL.md) - updated (+2/-2)
+- [send-message](https://github.com/terrylica/cc-skills/blob/main/plugins/tlg/skills/send-message/SKILL.md) - updated (+49/-8)
+
+</details>
+
+
+### Skill References
+
+<details>
+<summary><strong>devops-tools/firecrawl-research-patterns</strong> (6 files)</summary>
+
+- [Academic Paper Routing](https://github.com/terrylica/cc-skills/blob/main/plugins/devops-tools/skills/firecrawl-research-patterns/references/academic-paper-routing.md) - updated (+18/-18)
+- [API Endpoint Reference](https://github.com/terrylica/cc-skills/blob/main/plugins/devops-tools/skills/firecrawl-research-patterns/references/api-endpoint-reference.md) - updated (+15/-15)
+- [Recursive Research Protocol](https://github.com/terrylica/cc-skills/blob/main/plugins/devops-tools/skills/firecrawl-research-patterns/references/recursive-research-protocol.md) - updated (+2/-2)
+- [Firecrawl Bootstrap: Fresh Installation](https://github.com/terrylica/cc-skills/blob/main/plugins/devops-tools/skills/firecrawl-research-patterns/references/self-hosted-bootstrap-guide.md) - updated (+1/-1)
+- [Firecrawl Self-Hosted Operations](https://github.com/terrylica/cc-skills/blob/main/plugins/devops-tools/skills/firecrawl-research-patterns/references/self-hosted-operations.md) - updated (+21/-21)
+- [Firecrawl Troubleshooting](https://github.com/terrylica/cc-skills/blob/main/plugins/devops-tools/skills/firecrawl-research-patterns/references/self-hosted-troubleshooting.md) - updated (+10/-10)
+
+</details>
+
+<details>
+<summary><strong>gh-tools/research-archival</strong> (1 file)</summary>
+
+- [URL Routing](https://github.com/terrylica/cc-skills/blob/main/plugins/gh-tools/skills/research-archival/references/url-routing.md) - updated (+14/-14)
+
+</details>
+
+
+## Repository Documentation
+
+### General Documentation
+
+- [1Password Credential Registry](https://github.com/terrylica/cc-skills/blob/main/docs/1password-credential-registry.md) - new (+37)
+
+## Other Documentation
+
+### Other
+
+- [devops-tools Plugin](https://github.com/terrylica/cc-skills/blob/main/plugins/devops-tools/CLAUDE.md) - updated (+6/-6)
+- [ralph-unified](https://github.com/terrylica/cc-skills/blob/main/plugins/ru/hooks/templates/ralph-unified.md) - updated (+4/-3)
+
 ## [12.49.1](https://github.com/terrylica/cc-skills/compare/v12.49.0...v12.49.1) (2026-04-16)
 
 

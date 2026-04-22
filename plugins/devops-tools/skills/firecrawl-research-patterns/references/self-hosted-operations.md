@@ -2,14 +2,14 @@
 
 Deployment, health checks, recovery, and best practices for the self-hosted Firecrawl instance.
 
-**Host**: bigblack (Tailscale: `bigblack.tail0f299b.ts.net`) — currently offline
+**Host**: littleblack (Tailscale: `littleblack.tail0f299b.ts.net`, legacy ZeroTier: `172.25.236.1`). All 5 containers up 5+ weeks, stable.
 **Source**: <https://github.com/mendableai/firecrawl>
 
 ## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    bigblack (Tailscale)                   │
+│                    littleblack (Tailscale)                   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
@@ -29,7 +29,7 @@ Deployment, health checks, recovery, and best practices for the self-hosted Fire
 │         │            │ (files)      │    │ RabbitMQ     │       │
 │         ▼            └──────────────┘    └──────────────┘       │
 │  ┌──────────────┐                                               │
-│  │ Output URL   │◀── http://bigblack:8080/NAME-TS.md       │
+│  │ Output URL   │◀── http://littleblack:8080/NAME-TS.md       │
 │  └──────────────┘                                               │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -58,14 +58,14 @@ Deployment, health checks, recovery, and best practices for the self-hosted Fire
 ### Recommended: Wrapper Endpoint (port 3003)
 
 ```bash
-curl "http://bigblack:3003/scrape?url=URL&name=NAME"
+curl "http://littleblack:3003/scrape?url=URL&name=NAME"
 ```
 
 Returns:
 
 ```json
 {
-  "url": "http://bigblack:8080/NAME-TIMESTAMP.md",
+  "url": "http://littleblack:8080/NAME-TIMESTAMP.md",
   "file": "NAME-TIMESTAMP.md"
 }
 ```
@@ -73,7 +73,7 @@ Returns:
 ### Direct API (Advanced)
 
 ```bash
-curl -s -X POST http://bigblack:3002/v1/scrape \
+curl -s -X POST http://littleblack:3002/v1/scrape \
   -H "Content-Type: application/json" \
   -d '{"url":"URL","formats":["markdown"],"waitFor":5000}' \
   | jq -r '.data.markdown'
@@ -85,50 +85,50 @@ curl -s -X POST http://bigblack:3002/v1/scrape \
 
 ```bash
 # All containers running?
-ssh bigblack 'docker ps --filter "name=firecrawl" --format "{{.Names}}: {{.Status}}"'
+ssh littleblack 'docker ps --filter "name=firecrawl" --format "{{.Names}}: {{.Status}}"'
 
 # API responding?
-ssh bigblack 'curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/v1/scrape'
+ssh littleblack 'curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/v1/scrape'
 # Expected: 401 (no payload) or 200 (with payload)
 
 # Wrapper responding?
-curl -s -o /dev/null -w "%{http_code}" "http://bigblack:3003/health"
+curl -s -o /dev/null -w "%{http_code}" "http://littleblack:3003/health"
 ```
 
 ### Detailed Status
 
 ```bash
 # systemd services (services run under kab user, not yca SSH user)
-ssh bigblack "sudo systemctl --user -M kab@ status firecrawl-scraper caddy-firecrawl"
+ssh littleblack "sudo systemctl --user -M kab@ status firecrawl-scraper caddy-firecrawl"
 
 # Docker container details
-ssh bigblack 'docker ps -a --filter "name=firecrawl" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"'
+ssh littleblack 'docker ps -a --filter "name=firecrawl" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"'
 
 # Logs (live)
-ssh bigblack "sudo journalctl --user -M kab@ -u firecrawl-scraper -u caddy-firecrawl -f"
+ssh littleblack "sudo journalctl --user -M kab@ -u firecrawl-scraper -u caddy-firecrawl -f"
 ```
 
-**Note**: Firecrawl services run under the `kab` user on bigblack. The SSH user is `yca`. Always use `sudo systemctl --user -M kab@` — plain `systemctl --user` targets the SSH user and sees no services.
+**Note**: Firecrawl services run under the `kab` user on littleblack. The SSH user is `yca`. Always use `sudo systemctl --user -M kab@` — plain `systemctl --user` targets the SSH user and sees no services.
 
 ## Recovery Commands Cheatsheet
 
 ```bash
 # Full restart (all services)
-ssh bigblack 'cd ~/firecrawl && docker compose restart'
-ssh bigblack 'sudo systemctl --user -M kab@ restart firecrawl-scraper caddy-firecrawl'
+ssh littleblack 'cd ~/firecrawl && docker compose restart'
+ssh littleblack 'sudo systemctl --user -M kab@ restart firecrawl-scraper caddy-firecrawl'
 
 # Check everything
-ssh bigblack 'docker ps --filter "name=firecrawl" && sudo systemctl --user -M kab@ status firecrawl-scraper caddy-firecrawl --no-pager'
+ssh littleblack 'docker ps --filter "name=firecrawl" && sudo systemctl --user -M kab@ status firecrawl-scraper caddy-firecrawl --no-pager'
 
 # Logs (last 100 lines)
-ssh bigblack 'docker logs firecrawl-api-1 --tail 100'
-ssh bigblack 'sudo journalctl --user -M kab@ -u firecrawl-scraper --no-pager -n 100'
+ssh littleblack 'docker logs firecrawl-api-1 --tail 100'
+ssh littleblack 'sudo journalctl --user -M kab@ -u firecrawl-scraper --no-pager -n 100'
 
 # Force recreate with new config
-ssh bigblack 'cd ~/firecrawl && docker compose up -d --force-recreate'
+ssh littleblack 'cd ~/firecrawl && docker compose up -d --force-recreate'
 
 # Verify restart policies
-ssh bigblack 'docker inspect --format "{{.Name}}: RestartPolicy={{.HostConfig.RestartPolicy.Name}}" $(docker ps -a --filter "name=firecrawl" -q)'
+ssh littleblack 'docker inspect --format "{{.Name}}: RestartPolicy={{.HostConfig.RestartPolicy.Name}}" $(docker ps -a --filter "name=firecrawl" -q)'
 ```
 
 ## Cloudflare Bypass (Port 3004)
@@ -136,7 +136,7 @@ ssh bigblack 'docker inspect --format "{{.Name}}: RestartPolicy={{.HostConfig.Re
 For sites that block Playwright-based scraping (Cloudflare challenge pages), use the curl-impersonate bypass service:
 
 ```bash
-curl "http://bigblack:3004/scrape-cf?url=URL&name=NAME"
+curl "http://littleblack:3004/scrape-cf?url=URL&name=NAME"
 ```
 
 This uses `curl-impersonate` to mimic a real browser TLS fingerprint, bypassing Cloudflare's bot detection. Use when port 3003 returns a Cloudflare challenge instead of page content.

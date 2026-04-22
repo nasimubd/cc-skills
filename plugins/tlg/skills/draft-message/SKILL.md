@@ -51,10 +51,10 @@ If `EXPIRED`, run `/tlg:setup` first.
 SCRIPT="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/cc-skills/plugins/tlg}/scripts/tg-cli.py"
 
 # Draft a plain-text message labelled for a group
-uv run --python 3.13 "$SCRIPT" draft -5111414203 "Plain text draft goes here"
+uv run --python 3.13 "$SCRIPT" draft -1003958083153 "Plain text draft goes here"
 
 # Draft an HTML-formatted message
-uv run --python 3.13 "$SCRIPT" draft --html -5111414203 "<b>Bold heading</b>
+uv run --python 3.13 "$SCRIPT" draft --html -1003958083153 "<b>Bold heading</b>
 
 Body text with <code>inline code</code> and a <a href=\"https://example.com\">link</a>."
 
@@ -123,6 +123,7 @@ Drafts are **your reviewer safety net** — a deliberate pause between AI author
 ## Behavior Details
 
 - **Drafts append, they do not replace.** Each `draft` call sends a new `(header, body)` pair to Saved Messages. Older drafts remain visible above — the user can mentally track which is latest by position.
+- **Long drafts auto-split.** The body is auto-split at ~3900 plain chars per Telegram's 4096 hard limit. Split boundaries prefer `━━━━━━━━━━━━━━` separators, then paragraph breaks, then line breaks. Each continuation part is labelled `<i>(Part N/M)</i>`. See `send-message` SKILL.md "Auto-split for long messages" for the full algorithm.
 - **Formatting is preserved end-to-end.** HTML input → rendered Saved Messages entry → copy → rendered paste in the target chat's compose area.
 - **No cloud-draft race conditions.** Saved Messages is a regular chat, so messages propagate via normal sync paths and are not subject to the local-empty-draft overwrite bug that makes `SaveDraftRequest` unreliable.
 - **Silent from the target chat's perspective.** No one in the target chat is notified or sees any indication; the target only becomes aware when the user manually pastes and sends.

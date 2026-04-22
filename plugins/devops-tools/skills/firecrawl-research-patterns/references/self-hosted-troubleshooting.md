@@ -8,10 +8,10 @@
 
 ```bash
 # Check container status
-ssh bigblack 'docker ps -a --filter "name=firecrawl"'
+ssh littleblack 'docker ps -a --filter "name=firecrawl"'
 
 # Check restart policy
-ssh bigblack 'docker inspect --format "{{.Name}}: {{.HostConfig.RestartPolicy.Name}}" $(docker ps -a --filter "name=firecrawl" -q)'
+ssh littleblack 'docker inspect --format "{{.Name}}: {{.HostConfig.RestartPolicy.Name}}" $(docker ps -a --filter "name=firecrawl" -q)'
 ```
 
 **Fix**: Add `restart: unless-stopped` to ALL services in `docker-compose.yaml`:
@@ -49,13 +49,13 @@ services:
 **Apply Fix**:
 
 ```bash
-ssh bigblack 'cd ~/firecrawl && docker compose up -d --force-recreate'
+ssh littleblack 'cd ~/firecrawl && docker compose up -d --force-recreate'
 ```
 
 **Verify**:
 
 ```bash
-ssh bigblack 'docker inspect --format "{{.Name}}: RestartPolicy={{.HostConfig.RestartPolicy.Name}}" $(docker ps -a --filter "name=firecrawl" -q)'
+ssh littleblack 'docker inspect --format "{{.Name}}: RestartPolicy={{.HostConfig.RestartPolicy.Name}}" $(docker ps -a --filter "name=firecrawl" -q)'
 # All should show: RestartPolicy=unless-stopped
 ```
 
@@ -64,13 +64,13 @@ ssh bigblack 'docker inspect --format "{{.Name}}: RestartPolicy={{.HostConfig.Re
 **Diagnosis**:
 
 ```bash
-ssh bigblack "systemctl --user status firecrawl-scraper"
+ssh littleblack "systemctl --user status firecrawl-scraper"
 ```
 
 **Fix**:
 
 ```bash
-ssh bigblack "systemctl --user restart firecrawl-scraper"
+ssh littleblack "systemctl --user restart firecrawl-scraper"
 ```
 
 ## Symptom: Caddy File Server Down
@@ -78,14 +78,14 @@ ssh bigblack "systemctl --user restart firecrawl-scraper"
 **Diagnosis**:
 
 ```bash
-ssh bigblack "systemctl --user status caddy-firecrawl"
-curl -I http://bigblack:8080/
+ssh littleblack "systemctl --user status caddy-firecrawl"
+curl -I http://littleblack:8080/
 ```
 
 **Fix**:
 
 ```bash
-ssh bigblack "systemctl --user restart caddy-firecrawl"
+ssh littleblack "systemctl --user restart caddy-firecrawl"
 ```
 
 ## Symptom: Tailscale Unreachable
@@ -94,7 +94,7 @@ ssh bigblack "systemctl --user restart caddy-firecrawl"
 
 ```bash
 # From local machine
-tailscale ping bigblack
+tailscale ping littleblack
 
 # Check Tailscale status
 tailscale status
