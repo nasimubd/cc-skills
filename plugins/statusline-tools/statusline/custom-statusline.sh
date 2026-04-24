@@ -416,7 +416,7 @@ fi
 CCMAX_CACHE="/tmp/ccmax-statusline-cache.json"
 CCMAX_CACHE_TTL=60
 ccmax_line=""
-CCMAX_BASE="http://localhost:18095"
+# CCMAX_BASE is set above (per-OS) or inherited from env
 
 ccmax_needs_fetch=1
 if [ -f "$CCMAX_CACHE" ]; then
