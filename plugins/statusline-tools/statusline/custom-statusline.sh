@@ -38,6 +38,34 @@ get_repo_path() {
 
 repo_path=$(get_repo_path)
 
+# Cross-platform mtime in epoch seconds. GNU (Linux) stat uses -c %Y; BSD/macOS uses -f %m.
+_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
+
+# Cross-platform ISO-8601 UTC (YYYY-MM-DDTHH:MM:SSZ) to epoch seconds.
+_iso_to_epoch() {
+    date -d "$1" +%s 2>/dev/null \
+        || TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%SZ" "$1" "+%s" 2>/dev/null \
+        || echo ""
+}
+
+# ccmax dashboard base URL — laptop has an SSH tunnel localhost:18095→bigblack:8095;
+# bigblack itself binds 127.0.0.1:8095 directly. Env override wins if set.
+if [ -z "${CCMAX_BASE:-}" ]; then
+    case "$(uname -s)" in
+        Linux) CCMAX_BASE="http://127.0.0.1:8095" ;;
+        *)     CCMAX_BASE="http://localhost:18095" ;;
+    esac
+fi
+
+# Claude Code OAuth credentials JSON — macOS Keychain on Darwin, ~/.claude/.credentials.json on Linux.
+_claude_creds_json() {
+    if command -v security >/dev/null 2>&1; then
+        security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null
+    elif [ -f "$HOME/.claude/.credentials.json" ]; then
+        cat "$HOME/.claude/.credentials.json" 2>/dev/null
+    fi
+}
+
 # Debug logging (temporary) - logs invocations to diagnose intermittent failures
 DEBUG_LOG="/tmp/ccstatusline-invocation.log"
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) PID=$$ PPID=$PPID PWD=$(pwd)" >> "$DEBUG_LOG" 2>/dev/null
@@ -176,7 +204,7 @@ if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
         cache_age=9999
 
         if [ -f "$cache_file" ]; then
-            cache_age=$(($(date +%s) - $(stat -f %m "$cache_file" 2>/dev/null || echo 0)))
+            cache_age=$(($(date +%s) - $(_mtime "$cache_file")))
         fi
 
         # Only query remote every 30 seconds to avoid network overhead
@@ -275,7 +303,7 @@ if [ -n "$owner_repo" ]; then
         latest_tag="${release_json%%|*}"
         published_at="${release_json##*|}"
         # Convert ISO 8601 publishedAt (UTC) to epoch for reltime
-        tag_epoch=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%SZ" "$published_at" "+%s" 2>/dev/null || echo "")
+        tag_epoch=$(_iso_to_epoch "$published_at")
         tag_age=""
         if [ -n "$tag_epoch" ]; then
             tag_age=" ${BRIGHT_BLACK}$(reltime "$tag_epoch")${RESET}"
@@ -392,7 +420,7 @@ CCMAX_BASE="http://localhost:18095"
 
 ccmax_needs_fetch=1
 if [ -f "$CCMAX_CACHE" ]; then
-    cache_mtime=$(stat -f %m "$CCMAX_CACHE" 2>/dev/null || echo 0)
+    cache_mtime=$(_mtime "$CCMAX_CACHE")
     cache_age=$(( $(date +%s) - cache_mtime ))
     [ "$cache_age" -lt "$CCMAX_CACHE_TTL" ] && ccmax_needs_fetch=0
 fi
@@ -414,13 +442,13 @@ fi
 CCMAX_LOCAL_CACHE="/tmp/ccmax-local-account"
 ccmax_local_account=""
 if [ -f "$CCMAX_LOCAL_CACHE" ]; then
-    local_cache_age=$(( $(date +%s) - $(stat -f %m "$CCMAX_LOCAL_CACHE" 2>/dev/null || echo 0) ))
+    local_cache_age=$(( $(date +%s) - $(_mtime "$CCMAX_LOCAL_CACHE") ))
     if [ "$local_cache_age" -lt 60 ]; then
         ccmax_local_account=$(cat "$CCMAX_LOCAL_CACHE")
     fi
 fi
 if [ -z "$ccmax_local_account" ]; then
-    local_token=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
+    local_token=$(_claude_creds_json \
         | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null) || local_token=""
     if [ -n "$local_token" ]; then
         ccmax_local_account=$(curl -sf --max-time 3 "https://api.anthropic.com/api/oauth/profile" \
@@ -497,7 +525,7 @@ except Exception:
 else
     # el02 unreachable — show account name + token expiry from local keychain
     if [ -n "$ccmax_local_account" ]; then
-        expiry=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
+        expiry=$(_claude_creds_json \
             | python3 -c "
 import sys, json, time
 d = json.loads(sys.stdin.read())
@@ -634,7 +662,7 @@ if [ "$cron_count" -gt 0 ]; then
             encoded_dir="${full_path//\//-}"
             jsonl_file="$HOME/.claude/projects/${encoded_dir}/${gc_session}.jsonl"
             if [ -f "$jsonl_file" ]; then
-                jsonl_mtime=$(stat -f %m "$jsonl_file" 2>/dev/null || echo 0)
+                jsonl_mtime=$(_mtime "$jsonl_file")
                 age=$((now_epoch - jsonl_mtime))
                 if [ "$age" -lt "$session_stale_threshold" ]; then
                     is_stale=0  # session is alive
