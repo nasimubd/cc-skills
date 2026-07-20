@@ -1,3 +1,43 @@
+## [22.13.2](https://github.com/terrylica/cc-skills/compare/v22.13.1...v22.13.2) (2026-07-19)
+
+## [22.13.1](https://github.com/terrylica/cc-skills/compare/v22.13.0...v22.13.1) (2026-07-19)
+
+
+### Bug Fixes
+
+* **notes-commander:** iterate pre-captured refs in merge-folder ([19e6540](https://github.com/terrylica/cc-skills/commit/19e654057b8452e5ffbfe7b6e5600510371fc4bf))
+
+# [22.13.0](https://github.com/terrylica/cc-skills/compare/v22.12.1...v22.13.0) (2026-07-19)
+
+
+### Features
+
+* **notes-commander:** Apple Notes organizer plugin; absorbs draft-hold ([c7d941f](https://github.com/terrylica/cc-skills/commit/c7d941ff79f05c1bd94c34254ccdc2dac02df1f7))
+* **release:** gate releases on the marketplace-wide bun unit suite ([cc0d48b](https://github.com/terrylica/cc-skills/commit/cc0d48bfc6ccd4179ea7408f857def51a35ec99b))
+
+## [22.12.1](https://github.com/terrylica/cc-skills/compare/v22.12.0...v22.12.1) (2026-07-19)
+
+
+### Bug Fixes
+
+* **draft-hold:** create-then-swap replace to prevent orphaned drafts ([abb73fc](https://github.com/terrylica/cc-skills/commit/abb73fcb203998d082782ac13add3cc28fc1630a))
+
+# [22.12.0](https://github.com/terrylica/cc-skills/compare/v22.11.0...v22.12.0) (2026-07-19)
+
+
+### Bug Fixes
+
+* **draft-hold:** reflow hard-wrapped prose to avoid Notes line breaks ([7221213](https://github.com/terrylica/cc-skills/commit/72212135c20dcde627fc583f3fef002c29f40222))
+* **gmail-commander:** route digest via ccmax fleet wrapper ([d958b52](https://github.com/terrylica/cc-skills/commit/d958b52bc1a71983f07e3d8ebf1685bc40528d17))
+* **gmail-commander:** send drafts as HTML multipart/alternative (supersedes format=flowed) ([3eab02e](https://github.com/terrylica/cc-skills/commit/3eab02eadb60764a8ba2c1b4706966cb94817001))
+* **gmail-commander:** send drafts as RFC3676 format=flowed ([da0820e](https://github.com/terrylica/cc-skills/commit/da0820eeabb7f48b3d9416b4c7d2f1312f783344))
+
+
+### Features
+
+* **gh-tools:** guard blocks repo create/push to wrong GitHub owner ([50a5df5](https://github.com/terrylica/cc-skills/commit/50a5df571bfd5933beb10281cbe05d6ae38b8036)), closes [#tools](https://github.com/terrylica/cc-skills/issues/tools) [#repo-identity-guard](https://github.com/terrylica/cc-skills/issues/repo-identity-guard)
+* **gmail-commander:** alert on digest failure via DIGEST_ALERT_CMD ([b2aff44](https://github.com/terrylica/cc-skills/commit/b2aff44fb13b456016ee5d6c65699f0e640c012e))
+
 # [22.11.0](https://github.com/terrylica/cc-skills/compare/v22.10.2...v22.11.0) (2026-07-08)
 
 
