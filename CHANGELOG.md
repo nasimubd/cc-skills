@@ -1,3 +1,189 @@
+# [22.17.0](https://github.com/terrylica/cc-skills/compare/v22.16.3...v22.17.0) (2026-07-22)
+
+
+### Bug Fixes
+
+* **zai:** add required self-evolution sandwich to the glm skill ([26eea83](https://github.com/terrylica/cc-skills/commit/26eea83cb080c52799bf451dc04197f083c246d5))
+The release preflight's self-evolution sandwich check requires every SKILL.md
+to carry a "Self-Evolving Skill" reminder in its top 25 body lines and a
+"## Post-Execution Reflection" section near the bottom. The freshly-migrated
+glm skill (converted from the old raw command, which was not subject to the
+check) lacked both, so preflight hard-failed before tagging v22.17.0.
+
+- Add the Self-Evolving reminder banner under the skill heading.
+- Add a Post-Execution Reflection with two concrete reflection prompts
+  (zai-call/flag drift → fix here + CAPABILITIES.md; wrong-surface routing →
+  sharpen the description).
+- Verified against scripts/skill-md-self-evolution-sandwich-single-pass-awk-scanner.awk
+  (self_evolving=1, reflection within the last 15 lines).
+
+This unblocks the v22.17.0 release; no behavioral change to the consult itself.
+
+
+### Features
+
+* **zai:** migrate manual /glm from a raw command to a /zai:glm skill ([d5a4b39](https://github.com/terrylica/cc-skills/commit/d5a4b390579cb97b5ab3c2ea5b790baf4d6c0beb))
+zai was the only plugin in the marketplace shipping a plugin-root
+`commands/` directory (`commands/glm.md`, the bare `/glm` alias). The
+release verifier's Check 6 flags any such directory as a pre-migration
+"legacy commands/" leftover, so every release printed a false ✗ for zai.
+Rather than teach the verifier an exception, this converts the manual
+consult into a skill — skills are the marketplace's canonical command
+surface (they auto-expose as `/plugin:skill`), so the verifier passes
+cleanly with no allowlist and zai follows the same convention as the other
+40 plugins.
+
+- Add `skills/glm/SKILL.md` with `disable-model-invocation: true`, so it
+  fires ONLY when the user types `/zai:glm` — it does not compete with the
+  autonomous `ask-glm` skill for model-initiated consults. Body is the same
+  `zai chat $ARGUMENTS` passthrough, with the same argument-hint.
+- Remove `commands/glm.md` and the now-empty `commands/` dir.
+- Update the zai CLAUDE.md file-map + Recent-changes, the README surface
+  list, and the user hub so no doc still advertises the old `/glm`.
+
+Behavioral change: the bare `/glm` alias is gone; invoke as `/zai:glm`.
+`ask-glm` (autonomous cross-check) and the `glm` subagent are unchanged.
+This also permanently clears the recurring release-verifier ✗.
+
+## [22.16.3](https://github.com/terrylica/cc-skills/compare/v22.16.2...v22.16.3) (2026-07-22)
+
+
+### Bug Fixes
+
+* **asciinema-tools:** wire finalize --force flag to actually take effect ([aef0411](https://github.com/terrylica/cc-skills/commit/aef04112102b8741ee4a22c41ffcc78a888c5e1b)), closes [#92](https://github.com/terrylica/cc-skills/issues/92)
+The finalize skill documents a --force flag (argument-hint + Arguments
+table) and Phase 3 gates SIGKILL on `[[ "$FORCE" == "true" ]]`, but nothing
+ever assigned $FORCE from the invocation arguments. The flag was silently
+dead: a user passing --force against a process that ignored SIGTERM/SIGINT
+would see "Use --force for SIGKILL" and then... nothing, because the branch
+that sends `kill -9` could never be reached. Phase 3 now parses its own
+arguments, splitting the documented --force flag out of the PID list so the
+escalation path works as advertised.
+
+- Add an arg-parse loop at the top of the Phase 3 block: `--force` sets
+  FORCE=true, everything else accumulates into PIDS.
+- Parse inside the same block that consumes $FORCE — separate `bash`
+  heredocs are separate processes, so a standalone "parse phase" (as the
+  external PR proposed) would not survive across blocks. This is the durable
+  fix for the SKILL.md multi-block execution model.
+- Add an instruction telling the caller to pass --force through to the
+  Phase 3 block when the user invoked finalize with --force.
+- No behavioral change when --force is absent: FORCE defaults to false and
+  the graceful SIGTERM → SIGINT path is unchanged.
+
+Fix authored independently (not merged from the external report) per the
+contribution policy; credit to the reporter in the issue/PR thread.
+* **crucible:** grant Write/Edit so self-evolving skills can self-evolve ([09a7cc7](https://github.com/terrylica/cc-skills/commit/09a7cc78c10973c0e047ee115394f9c07675658e)), closes [#94](https://github.com/terrylica/cc-skills/issues/94) [#94](https://github.com/terrylica/cc-skills/issues/94) [#94](https://github.com/terrylica/cc-skills/issues/94)
+Every crucible skill carries a "Self-Evolving Skill" banner plus a
+Post-Execution Reflection that instructs the agent to edit the SKILL.md
+in-place and append to references/evolution-log.md. But three of the five
+skills declared only `Read, Glob, Grep` in allowed-tools, so that
+self-evolution step was structurally impossible — the agent was told to
+write, then denied the tool to do it. This aligns the whole plugin: all
+five skills can now perform the reflection they document. `b-investigation-
+methodology` and `d-emergent-resurrection` already granted Write/Edit; this
+brings the remaining three into line.
+
+- 00-navigator: `Read, Glob, Grep` → `Read, Write, Edit, Glob, Grep`
+
+## [22.16.2](https://github.com/terrylica/cc-skills/compare/v22.16.1...v22.16.2) (2026-07-22)
+
+
+### Bug Fixes
+
+* **itp-hooks:** drop gh_recursion false-positives on safe token capture ([bbe0705](https://github.com/terrylica/cc-skills/commit/bbe0705c84cdd468767f9b4b9f8bf73d58c2c341)), closes [#91](https://github.com/terrylica/cc-skills/issues/91)
+The process-storm guard's `gh_recursion` category blocked any command that
+captured a GitHub token into a shell variable — the `GH_TOKEN=`/`GITHUB_TOKEN=`
+assignment-from-subshell forms and a `gh auth token`/`gh auth status` command
+substitution anywhere. But capturing a token is a one-shot read, not recursion.
+The genuine recursion vector — a git credential.helper / GIT_ASKPASS that shells
+out to `gh auth` — is already covered by the separate `credential_storm`
+category. So the capture patterns added no protection while producing two real
+false positives, both hit repeatedly in this repo's own release sessions: the
+canonical multi-identity push (capture a token, then push as a non-default `gh`
+account) and any heredoc, commit message, or doc that merely MENTIONS the
+pattern (they matched command TEXT, not an executed subshell — e.g. writing this
+very changelog entry).
+
+Removing the three capture patterns loses zero protection and removes the
+papercut. Verified end-to-end: the safe capture now returns allow while a real
+`credential.helper '!gh auth'` still denies via credential_storm.
+
+- Remove the `gh_recursion` category from process-storm-patterns.mjs (patterns +
+  DEFAULT_CONFIG entry), leaving a note that credential_storm covers the real
+  vector
+- Invert the tests: safe token capture, the multi-identity push, and a
+  heredoc-mention are asserted NOT flagged; a credential.helper recursion is
+  asserted STILL flagged as credential_storm (16 pass)
+- Mark the run-full-release evolution-log papercut RESOLVED; its inline
+  PROCESS-STORM-OK escape hatch is now belt-and-suspenders, not required
+
+## [22.16.1](https://github.com/terrylica/cc-skills/compare/v22.16.0...v22.16.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **devops-tools:** redact leaked HAIKU_PROVIDER key from launchd example ([798f9c9](https://github.com/terrylica/cc-skills/commit/798f9c93de0bb13b2e321ba0397b56aa9146b983)), closes [#89](https://github.com/terrylica/cc-skills/issues/89) [#89](https://github.com/terrylica/cc-skills/issues/89)
+A live provider API key was committed in the claude-code-proxy-patterns
+launchd-configuration reference (a plist EnvironmentVariables example),
+reported publicly in issue #89. This removes it from HEAD and replaces it with a
+non-secret placeholder plus a prominent note to source provider keys from a
+secrets manager (1Password "Claude Automation" vault / Doppler / SCS) and keep
+the generated plist out of git.
+
+IMPORTANT: redaction at HEAD is secondary. The real remediation is rotation —
+the exposed key must be revoked and reissued in the provider dashboard, after
+which the leaked value (still present in git history, intentionally not
+force-scrubbed to avoid rewriting a public repo with forks and open PRs) is
+
+# [22.16.0](https://github.com/terrylica/cc-skills/compare/v22.15.0...v22.16.0) (2026-07-21)
+
+
+### Features
+
+* **zai:** Z.ai GLM Coding Plan as complementary consultant + toolbelt ([13f1be9](https://github.com/terrylica/cc-skills/commit/13f1be92951f2e9684b04d4bcc8afe948dd16345))
+Zhipu GLM-5.2 (and the full Z.ai Coding Plan surface) exposed to Claude Code as an
+on-demand COMPLEMENT to Claude — never a replacement for the Haiku/Sonnet/Opus tiers
+or their routing. Built from a 12-area empirical capability probe (202 live API
+calls, 0 errors).
+
+Completed
+- scripts/zai.ts: one Bun CLI — chat (fast thinking:disabled / deep thinking:enabled
+  + reasoning_effort low|medium|high|max), ~1M-token context via --file/stdin, vision
+  (glm-4.6v), websearch + read (bundled web_search_prime / web_reader MCP over SSE
+  JSON-RPC), models (+ latest-model drift check), quota, doctor. Key from SCS
+  (vault get glm api_key); proxy stripped in-process.
+- Surfaces mirroring the catgpt pattern: ask-glm skill (autonomous consult),
+  zai-web-research skill (bundled web tools), glm subagent (isolated verdict), /glm.
+- references/CAPABILITIES.md: verified capability matrix + drift contract — 8 chat
+  models, reasoning knobs, 131072 output ceiling, ~1.03M input (measured), param
+  matrix, vision, anthropic-compat endpoint, MCP tools; plan-gated: no embeddings,
+  image-gen, or video-gen.
+- Registered in marketplace.json + plugins/CLAUDE.md (41 plugins, validate passes).
+
+Latest-model audit
+- Every area on the newest id (chat/reasoning glm-5.2, vision glm-4.6v); nothing
+  newer exists. Pins live in one home (CHAT_MODEL/VISION_MODEL); zai models
+  drift-checks the live catalog.
+
+Behavioral impact
+- Complementary-only by design: Haiku keeps the web-analysis role (prompt-injection
+  resistance); GLM is a called tool. No change to Claude Code model routing.
+
+No breaking changes.
+
+# [22.15.0](https://github.com/terrylica/cc-skills/compare/v22.14.0...v22.15.0) (2026-07-21)
+
+
+### Bug Fixes
+
+* **alpha-forge-preship:** G4 flags dead EonLabs-Spartan org URLs post-migration ([a5af9f2](https://github.com/terrylica/cc-skills/commit/a5af9f246de2fd4a53059eea223a475b4a09931c))
+
+
+### Features
+
+* **itp-hooks:** add release-notes extensiveness guard ([ec5af0f](https://github.com/terrylica/cc-skills/commit/ec5af0f6d38273123a38f840a8f8c5ebd892051a))
+
 # [22.14.0](https://github.com/terrylica/cc-skills/compare/v22.13.2...v22.14.0) (2026-07-21)
 
 

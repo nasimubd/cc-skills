@@ -92,7 +92,7 @@ bun scripts/validate-plugins.mjs --strict  # Fail on warnings
 
 If your plugin includes hooks, see [Hooks Development Guide](/docs/HOOKS.md).
 
-## All Plugins (39)
+## All Plugins (41)
 
 Each plugin's CLAUDE.md is its own SSoT for purpose, stack, and conventions. Listed alphabetically by directory name; follow the link for details. To verify this list matches reality: `comm -3 <(grep -oE '\[([a-z0-9-]+)\]\(\./[a-z0-9-]+/CLAUDE\.md\)' plugins/CLAUDE.md | sed -E 's/\[([a-z0-9-]+)\].*/\1/' | sort) <(ls -1 plugins/ | grep -v -e node_modules -e CLAUDE.md | sort)` (empty output = aligned).
 
@@ -106,6 +106,7 @@ Each plugin's CLAUDE.md is its own SSoT for purpose, stack, and conventions. Lis
 - [doc-tools](./doc-tools/CLAUDE.md)
 - [dotfiles-tools](./dotfiles-tools/CLAUDE.md)
 - [floating-clock](./floating-clock/CLAUDE.md)
+- [garch-volatility-toolkit](./garch-volatility-toolkit/CLAUDE.md) — walk-forward GARCH/GJR vol forecasting; methodology, not an alpha claim (honest negative-to-marginal results)
 - [gemini-deep-research](./gemini-deep-research/CLAUDE.md)
 - [gh-tools](./gh-tools/CLAUDE.md)
 - [git-town-workflow](./git-town-workflow/CLAUDE.md)
@@ -135,6 +136,7 @@ Each plugin's CLAUDE.md is its own SSoT for purpose, stack, and conventions. Lis
 - [tlg](./tlg/CLAUDE.md)
 - [tts-tg-sync](./tts-tg-sync/CLAUDE.md)
 - [whatsapp-commander](./whatsapp-commander/CLAUDE.md)
+- [zai](./zai/CLAUDE.md) — Z.ai GLM Coding Plan as a complementary consultant + toolbelt (empirically probed)
 
 ## Toolchain
 
