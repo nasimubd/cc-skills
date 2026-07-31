@@ -1,3 +1,1223 @@
+# [23.3.0](https://github.com/terrylica/cc-skills/compare/v23.2.0...v23.3.0) (2026-07-31)
+
+
+### Bug Fixes
+
+* **arxiv-source-first:** correct ground-truth numbers I got wrong ([6cff9ec](https://github.com/terrylica/cc-skills/commit/6cff9ec61f2e242bc3fd8b1399b9ccb6916785a8))
+The measurement shipped in d8227ca6 reported 28 ground-truth equations and an
+80 % OCR compile rate. Both were artifacts of this project's own tooling. The
+honest figures:
+
+                                    authors' LaTeX   OCR of the PDF
+    display equations                     55              55 candidates
+    mean token overlap                     —              0.958
+    exact after normalisation              —              13 of 55
+    COMPILES UNDER pdfTeX               54/55 (98%)     27/55 (49%)
+    unbalanced braces                    0/55            21/55
+
+FEWER THAN HALF the formulas read off the PDF compile. The retracted 80 % made
+OCR look merely lossy; 49 % makes it unusable without a TeX gate.
+
+FOUR BUGS, EVERY ONE CAUGHT BY A DISAGREEMENT RATHER THAN BY INSPECTION.
+
+1. The extractor was blind to raw `\[ … \]` delimiters and only scanned
+   `\begin{env}`. Caught when it reported 5 equations for arXiv:2402.02592 where
+   OCR reported 14 — the OCR was right. On the measured paper this hid 27 OF 55
+   equations, so the published "28" was barely half the paper. An extractor that
+   silently returns a subset is worse than one that fails, because the number it
+   returns looks like an answer.
+
+2. Reused job directories across the two compile batches: the second batch found
+   the first batch's leftover formula.pdf and scored a pass for it. THIS PRODUCED
+   THE 80 %. Caught only because the OCR figure moved from 44/55 to 54/55 when
+   nothing but the SOURCE input had changed — an impossible result. Directories
+   are now namespaced by batch.
+
+3. A shared -output-directory across concurrent jobs, which made the harness
+   report 0 of 28 for the authors' own published LaTeX.
+
+4. A `.timeout()` call that does not exist on Bun 1.3, throwing a TypeError that a
+   bare `catch {}` recorded as a failed compile.
+
+Bugs 3 and 4 were already documented; 1 and 2 are new, and 2 is the one that
+mattered because it produced a plausible number rather than an absurd one. A
+harness that reports 0/28 for a published paper gets questioned immediately. One
+that reports 80 % gets believed and published.
+
+All four are now recorded in the reference document under "Three harness bugs",
+kept deliberately: the pattern is that every one surfaced from two measurements
+disagreeing, never from re-reading the code.
+
+Propagated the corrected figures to the plugin README, the skill, unlimited-ocr's
+pitfall 13 and its hub item 5, which all quoted the retracted 80 %.
+
+Verified: 44 plugins validate, sandwich intact, every relative link resolves, and
+both compile batches re-run from clean directories.
+* **itp-hooks:** Migrate Stop hook to guarded async subprocess execution ([ead3c4b](https://github.com/terrylica/cc-skills/commit/ead3c4bd360400f807682b2de20166941d182c28))
+Incident 2026-07-31: Unguarded ty project-wide check reached 14.4 GB on session
+exit. Multiple concurrent sessions exiting can trigger several whole-tree `ty check
+.` runs simultaneously — the exact pattern that caused 2026-07-30 (73 GB across 4
+concurrent runs, kernel freeze). The Stop hook now uses the async spawn path with
+full resource guards: machine-wide concurrency slots, RSS watchdog (1500 MB ceiling),
+and kernel-enforced CPU ceiling, reusing infrastructure from iter-95 shared helper
+and iter-124 watchdog.
+
+Stop hook mirrors per-file PostToolUse check (which is guarded) rather than being a
+separate unguarded path. Duration is wrong axis; memory and concurrency are the
+layers that matter. Includes 5 new tests.
+* **itp-hooks:** restore pueue-wrap-guard to the last PreToolUse slot ([8e2b566](https://github.com/terrylica/cc-skills/commit/8e2b566748a5d598ec3823d7e0b26b0e725e0991)), closes [#15897](https://github.com/terrylica/cc-skills/issues/15897)
+The headless-claude-p-guard was registered as a new matcher group appended AFTER
+
+
+### Features
+
+* **arxiv-source-first:** read papers from source, not rendering ([3ea2c8b](https://github.com/terrylica/cc-skills/commit/3ea2c8bb2069643f9b689262442fedcbff8fc128))
+A session in ~/eon/alpha-forge left one item explicitly open: several specific
+figures from arXiv:2605.00501 "could not be verified — treat as unverified until
+someone reads the PDF", and one number quoted alongside them was outright
+fabricated. Reading the PDF was the wrong instruction. For an arXiv paper the PDF
+is a RENDERING of something obtainable losslessly.
+
+arxiv.org/e-print/<id> serves the authors' own LaTeX. It carries the exact
+formulas, their labels, and which of them are stated propositions rather than
+steps inside a proof — structure that does not survive into a rendering, so no
+vision model can recover it at any quality.
+
+THE MEASUREMENT THAT MOTIVATES THE PLUGIN. Same paper, same formulas, two routes:
+
+                                    authors' LaTeX   OCR of the PDF
+    mean token overlap vs source          —              0.948
+    exact after normalisation             —              0 of 28
+    COMPILES UNDER pdfTeX               27/28          44/55  (80%)
+    unbalanced braces                    0/28           21/55
+
+Every prior accuracy claim about OCR on this machine compared one model against
+ANOTHER MODEL — agreement, not correctness. An e-print is not a second opinion,
+it is the answer key, and this is the first time one has been used.
+
+A mean similarity of 0.948 and a one-in-five compile failure describe the same
+data. Similarity answers "does this look like the formula"; it cannot answer "can
+I use this", and the two come apart exactly where it matters — a dropped brace
+costs two percent of similarity and one hundred percent of usability.
+
+A NEW DEFECT IN UNLIMITED-OCR, recorded there as pitfall 13: it fuses a LaTeX
+command with the identifier that follows. `\neqi` for `\neq i` (5 times),
+`\DeltaRankIC` for `\Delta\text{RankIC}` (2), `\equivP`, `\logP` — with the
+correctly-spaced form appearing ZERO times, so it is systematic. The obvious
+suspect was our own --collapse-math-spacing; that was tested directly and returns
+all four inputs unchanged. The fusion is the model's. It is fluent, plausible,
+scores 0.97 against the true formula, and does not compile.
+
+WHAT SHIPS. A Rust extractor (pulldown-latex) emitting one record per display
+equation with its label, environment, enclosing theorem environment and title,
+whether the authors boxed it, the verbatim LaTeX and MathML — 28 of 28 rendered on
+the test paper. A Rust validity oracle for parse-and-brace-balance checks. A Bun
+harness that compiles each formula with a real TeX engine, which is the only test
+that answers the usability question.
+
+Tools live under skills/ rather than a top-level tools/ because the L3 cache
+populator strips everything outside hooks, skills, commands, agents and
+plugin.json — the iter-78 guard caught the first layout and it would have failed
+silently at runtime.
+
+ONE HARNESS CAVEAT KEPT ON THE RECORD, because it nearly became the finding. The
+compile test first reported 0 of 28 for the authors' own published LaTeX. Two
+bugs: all jobs shared one -output-directory so concurrent runs clobbered each
+other's .aux files, and the Bun shell chain called .timeout(), which does not
+exist on Bun 1.3, so every job threw a TypeError that a bare catch{} swallowed and
+reported as a failed compile. A published paper failing to compile is not a
+finding, it is a broken instrument. The catch is now .nothrow() plus an explicit
+"the harness, not the formula, is broken" throw.
+
+Verified: 44 plugins validate, 87 unlimited-ocr tests pass, the extractor builds
+and runs from its new home, every relative link resolves, and the skill carries
+both halves of the self-evolution sandwich.
+* **doc-tools:** route academic PDFs per page; settle TASC ([c22e00e](https://github.com/terrylica/cc-skills/commit/c22e00e038094338bc44181a4215e304bca25952))
+PER-PAGE ROUTING. academic-pdf-to-gfm classified a whole PDF as Type A, B or C
+and recommended one tool for all of it. That is too coarse to be safe. A single
+paper is routinely clean born-digital prose on most pages and equation- or
+figure-dense on a few, and the pages where Unlimited-OCR wins are not the pages
+where it silently loses.
+
+The silent loss is the reason this matters rather than being a refinement: the
+model localises a chart and transcribes ZERO characters inside it, so a
+chart-heavy page routed to it yields a WELL-FORMED result with all chart content
+missing. Nothing looks wrong. Per-page routing detects those pages and sends them
+somewhere else instead of discovering the hole downstream. Every mention of the
+model in the skill carries that limitation.
+
+TASC FIGURE SEGMENTATION: MEASURED, AND THE ANSWER IS NO. The OCR verdict for
+TASC was already NO — 100% born-digital, 97.9% word recall — and stands. The
+narrow question it never asked was whether SEGMENTING its figures recovers
+anything, since segmentation is the one capability nothing else in this stack has.
+
+Measured on 3 real pages spanning 1990, 2000 and 2010. Segmentation itself works
+well: 17, 26 and 21 regions detected, and the two candlestick charts on the 2000
+page cropped precisely with annotations and labels intact. But every chart region
+returned 0 characters, which is the documented behaviour rather than a fault, and
+TASC's existing text layer already captures the figure CAPTIONS in full. So the
+crops carry no information the corpus lacks unless an external describer is added,
+and that describer — not the segmentation — would be doing the work.
+
+A NO recorded as carefully as a YES, with the measurement that produced it, so the
+idea is not re-proposed on intuition.
+
+Also fixed here: the per-page rewrite replaced two working cross-plugin links with
+`../../unlimited-ocr/...` where the skill sits two directories below the plugin
+root, so both resolved to nothing. Restored to `../../../` and verified against
+the filesystem rather than by eye.
+
+Verified: marketplace validator green at 43 plugins, all doc-tools skills carry
+both halves of the self-evolution sandwich, and every relative link in the changed
+file resolves except one deliberate placeholder inside a worked example.
+* **unlimited-ocr:** batch folder parsing, and the stage 09 verdict ([cfd1b6f](https://github.com/terrylica/cc-skills/commit/cfd1b6f5e704285f7207a12a0ad8561fb25c0e18))
+BATCH FOLDER SKILL. A new skill and script parse an arbitrary folder of PDFs and
+images, so the flags and traps are wired in once instead of re-derived per use:
+one image per forward pass (PITFALLS 3 measured 1/3, 4/5, 0/10 recovered when
+batched), the chart-emptiness warning printed BEFORE the run rather than
+discovered after it, the withheld prompt modes, and per-file repetition status so
+a batch surfaces WHICH files tripped the guard instead of one aggregate code.
+
+It checkpoints. Results are written to the output folder before manifest.jsonl is
+appended, and the manifest is append-only, so a line implies its output exists.
+Verified by running it twice: the second run reports "All 2 files already
+processed" rather than redoing the work. This exists because this session lost 15
+minutes of model time to an external SIGKILL when a long run held everything in
+memory and wrote once at the end.
+
+STAGE 09 IS A NO, AND THE REASON IS NEW. All 198 math regions rendered from their
+stored bounding boxes at 300 DPI and run through the model, 13 minutes local. Under
+stage 09's OWN gate — normalizeLatexForSemanticComparison, not a similarity score
+chosen for the document — it agrees with neither incumbent on 0 of 198 and breaks
+0 of 147 deadlocks. Bridges do not rescue it: stripping layout markers, deleting
+all whitespace and unwrapping single-token braces reaches 4-5 of 106 where the
+existing pair reaches 24.
+
+The finding worth carrying elsewhere is why. 92 of 198 regions came back COMPLETELY
+EMPTY, and crop WIDTH predicts it while height barely moves:
+
+    returned text      106 regions   median width 772px   median height 98px
+    returned nothing    92 regions   median width 181px   median height 78px
+
+181px at 300 DPI is 0.6 inches — an inline fragment lifted out of a paragraph.
+This is a document layout parser: handed something that is already a single region
+with no surrounding page, it often finds no document structure and says nothing.
+FEED IT THE PAGE, NOT THE REGION. That is the opposite of the usual advice for
+vision models, and it determines how the stage 08 work gets built.
+
+It also does not merely stay silent on narrow crops. One returned fluent unrelated
+prose — "the elements are not possible to be empty, but they can be empty or
+empty" — against an image containing a policy-gradient expression. 11 of 198
+tripped the repetition guard, which is what caught it.
+
+A methodology error in that measurement is recorded rather than hidden: the first
+scoring pass left <|det|> layout markers in the output, which guarantees zero
+string agreement by itself. Stripping them moves the bridged ceiling from 2 to 5
+and moves the gate figure not at all, so the 0 survives — but it was found by
+inspecting samples, not by trusting the number.
+
+DOCUMENTATION CONTRADICTIONS FIXED. Three places said tables "come back as HTML by
+default, but convert to pipe-markdown with the default flag" — asserting both
+defaults in one sentence. The model writes HTML; the CLI converts; the flag
+defaults to pipe. Stated that way now in the hub, the parse skill and the batch
+skill.
+
+Verified: 87 tests pass, marketplace validator green at 43 plugins, all three
+skills carry both halves of the self-evolution sandwich, and the batch parser was
+run end-to-end on real images with its resume path exercised.
+* **unlimited-ocr:** convert HTML tables to pipe-markdown by default ([0397e5b](https://github.com/terrylica/cc-skills/commit/0397e5b5dfddbd7de6ad082b3e0a7af59fb36643)), closes [#160](https://github.com/terrylica/cc-skills/issues/160) [#x00A0](https://github.com/terrylica/cc-skills/issues/x00A0)
+The model emits HTML <table> markup and never pipe-markdown — measured at 88 of
+103 real TABLE images, with the other 15 coming back as prose. Anything that
+concatenated the output into a markdown document therefore embedded raw HTML,
+which most renderers pass through silently, and anything that compared the output
+against another reader's markdown was comparing markup rather than reading.
+
+`parse` now takes --table-format pipe|html, defaulting to PIPE. This is a
+behaviour change for existing callers, stated at every mention in the docs: pass
+--table-format html to keep the model's own serialization untouched.
+
+The naive converter that was good enough to MEASURE the problem (it took gate
+agreement from 1/103 to 62/103 in the stage 05 head-to-head) was not good enough
+to ship. Three independent reviewers were pointed at it and found six defects,
+five of which are fixed here and all of which were re-verified by execution
+rather than by reading the patch:
+
+  nested tables      a non-greedy regex stopped at the FIRST </table>, leaving
+                     stray </td></tr></table> in the output — now depth-counted
+
+# [23.2.0](https://github.com/terrylica/cc-skills/compare/v23.1.0...v23.2.0) (2026-07-31)
+
+> [!WARNING]
+> **One claim in this release's notes is retracted by a later commit in the same release.** The
+> `feat(doc-tools)` entry below announces *"QUANTML STAGE 05: YES, AS A THIRD READER FOR FORMULA
+> IMAGES."* That verdict is wrong and was reversed in `5023abf1`, which shipped in this same version.
+> semantic-release renders `feat` and `fix` bodies but not `docs` bodies, so the claim is generated
+> here and its retraction is not. The measured answer is **NO** for both formulas and tables: scored
+> against quantml stage 05's own agreement gate rather than a similarity ratio of the author's
+> choosing, the candidate third reader agrees with neither incumbent on 0 of 24 formulas and 1 of 103
+> tables, and breaks 0 of the 19 and 73 deadlocks respectively. Evidence, including the three wrong
+> measurements that preceded the right one, in
+> `plugins/unlimited-ocr/references/QUANTML-STAGE-05-THIRD-READER-HEAD-TO-HEAD.md`. Nothing was built
+> against the retracted verdict.
+
+
+### Bug Fixes
+
+* **disk-hygiene:** Phase 1 read the wrong APFS volume ([9864c63](https://github.com/terrylica/cc-skills/commit/9864c633332e439ad347f72872fa0c2d18e8d3a6))
+Under-reported disk use by 70x.
+
+The skill opened every audit with `df -h /`, which on APFS (Catalina onward) is
+the SEALED READ-ONLY system volume with a fixed ~10GB footprint. On a real audit
+today it reported "10Gi used, 185Gi avail" for a machine that was actually 707GB
+used and 80% full. All user and application data lives on /System/Volumes/Data.
+
+This is worse than a cosmetic error: it inverts the skill's conclusion. An agent
+trusting that headline would reasonably decide there was nothing to clean and
+stop before Phase 2.5 — where 109.6 GB of Rust `target/` was waiting, including
+one 66GB directory untouched since March.
+
+- Phase 1 and Template A now use `df -h /System/Volumes/Data`, with an inline
+  comment giving the reason and the measured 10Gi-vs-707GB discrepancy, so the
+  next reader does not "simplify" it back to `/`.
+- Cache table: the uv row listed only ~/Library/Caches/uv/, but uv kept 21GB at
+  ~/.cache/uv/ here — the Phase 2 size probe printed N/A while the largest cache
+  on the machine sat unmeasured. Row now lists both locations. (`uv cache clean`
+  finds it either way; only the measurement was blind.)
+- Evolution log entry with the full evidence.
+
+Verified in the same session: 175.8 GB reclaimed (185GB → 356GB free, 80% → 61%).
+Three existing safeguards confirmed still correct — the heredoc/pueue workaround,
+the Cargo.toml-sibling guard (correctly skipped a name-only `target` match), and
+the rustup-pin warning (1.93/1.94.x/1.95 were pinned and would have auto-reinstalled).
+* **unlimited-ocr:** add the missing Post-Execution Reflection sections ([0e0bda4](https://github.com/terrylica/cc-skills/commit/0e0bda46788048f3b29653177d13c9bcaec39d03))
+Both skills shipped without the bottom half of the self-evolution sandwich. The
+marketplace validator passes without it — the sandwich is checked only by
+release preflight, which is where this surfaced, one commit after the skills
+were already pushed.
+
+The two sections are specific rather than boilerplate. The parse skill's asks
+about exit 1 (repetition detected, measured base rate ~4 % on tables), about a
+withheld prompt mode behaving differently than its measured evidence says, and
+about downstream reformatting — because the model emits HTML tables and any
+converter written to cope with that belongs in this plugin rather than in the
+calling project. The segment skill's asks about clipped crops (the default
+--pad-pixels 12 exists because 0 clipped the axis labels off every panel of a
+real nine-panel figure), about the model omitting a region box, which is the
+silent under-delivery this skill already warns about, and about what the paired
+describer needed.
+* **unlimited-ocr:** decode the tokenizer surface form ([9cb03c1](https://github.com/terrylica/cc-skills/commit/9cb03c1156ed6058bea5c601c8cda207270c62c2))
+The MLX path returns the tokenizer byte-level-BPE SURFACE FORM rather than decoded text. Every byte
+of a multi-byte UTF-8 character arrives as its own stand-in character, so on a Chinese corpus the
+output is not degraded, it is destroyed:
+
+    8æľĪ                          ->  8月
+    åıįåĲĳæĹ¥åĨħéĢĨè½¬çļĦé¢ĳçİĩ  ->  反向日内逆转的频率
+    æĺŁæľŁåħŃ                     ->  星期六
+    âĳł                           ->  ①
+
+`decode_byte_level_bpe_surface_form` reverses the standard GPT-2 byte-level-BPE alphabet and
+recovers all of it. ASCII is a fixed point of that encoding, so LaTeX passes through byte-for-byte;
+characters outside the alphabet pass through as themselves, making the function a no-op on text
+that is already decoded and therefore safe to apply to either form.
+
+WHY IT SURVIVED THIS LONG, WHICH IS THE MORE USEFUL LESSON. Every image tested until now was either
+formula-only or English. ASCII is exactly where the surface form and the decoded text coincide, so
+the output looked flawless on a corpus that could not reveal the defect. It surfaced the first time
+the model was pointed at a page with real Chinese prose on it — which is the entire corpus this
+plugin was built for. A test corpus that shares an alphabet with the failure mode cannot see it.
+
+An earlier version replaced only `Ġ` with a space and `Ċ` with a newline. Those are not two quirks:
+`Ġ` is the surface form of byte 0x20 and `Ċ` of byte 0x0A. Patching the two most visible symptoms
+left every other byte mangled and made the underlying cause harder to see, not easier.
+
+It also explains something previously filed as unrelated. `references/EMPIRICAL.md` recorded a stray
+`âľī` in an English paper as an isolated mojibake of `✉`, alongside the claim that "ordinary CJK and
+Latin text was unaffected across every test". That claim was FALSE — CJK had never been tested — and
+the `âľī` was never isolated. Both are corrected in place rather than quietly deleted.
+
+Eight tests pin the decoder: each Chinese sample above, the circled digit, LaTeX passthrough, the
+`Ġ`/`Ċ` surface forms, idempotence on already-decoded text, and the empty string. 66 tests pass.
+
+A calibration point recorded while verifying this, because it cuts against the model's benchmark
+reputation: on `17e7c844edb2.jpg` the true formula is `I{RET_CO...} * I{RET_OC...}`, verified by eye
+against the source image. MiniMax-M3 transcribed both terms exactly right. GLM-4.6v got CO/OC right
+but wrote `.` for `_`. Unlimited-OCR wrote `RET.OC` TWICE — a semantic error, not a formatting one.
+One image is not a benchmark, but it is a concrete reason to keep treating this model as a third
+corroborating reader rather than a replacement for either existing one.
+
+
+### Features
+
+* **doc-tools:** offer Unlimited-OCR for PDF math ([75c5f4f](https://github.com/terrylica/cc-skills/commit/75c5f4f2c5c23289df35b0fe3a76e5be9449dc9e))
+Two integrations, both grounded in measurement rather than expectation.
+
+DOC-TOOLS. The academic-pdf-to-gfm skill told users, for Word-generated (Type A) PDFs, to
+"**Manually transcribe all equations** from PDF screenshots — there is no shortcut", and pointed
+Type C scanned PDFs at marker-pdf or tesseract. There is now a shortcut, and it is better than both:
+render at 300 DPI and parse locally. The example in the skill was executed against a real ICLR 2024
+paper before it was written down, and returns correct LaTeX including `\tag{}`, `\mathbf{}` and
+nested subscripts.
+
+Every mention carries the chart limitation, because the failure is silent: the model localises a
+chart and returns zero characters, so a user swapping tools on chart-heavy input would lose all
+chart content and see a well-formed result. Two claims the first draft made were removed — table
+quality was asserted but never measured, and cross-plugin links used absolute GitHub URLs where the
+house convention is relative paths.
+
+QUANTML STAGE 05: YES, AS A THIRD READER FOR FORMULA IMAGES. **[RETRACTED IN 5023abf1, SAME RELEASE — the measured answer is NO; see the warning at the top of this release's section.]** quantml runs two independent vision
+models and treats their agreement as evidence. Whether a third was worth adding had never been
+measured, so it was: 24 FORMULA images from the live corpus, every Unlimited-OCR transcription
+produced by actually running the model.
+
+    M3 <-> GLM-4.6v  (the existing pair)   0.811
+    M3 <-> Unlimited-OCR                   0.838
+    GLM-4.6v <-> Unlimited-OCR             0.755
+
+It agrees with M3 slightly more than GLM does — independent without being an outlier, which is
+exactly the band a useful third opinion occupies.
+
+The number that decides it: **8 of the 24 images carry a material M3/GLM disagreement, and the third
+reader takes a clear side in 7** — five times with M3, twice with GLM. That split matters; a reader
+that always sided with M3 would be measuring M3 rather than the image.
+
+On `68b99c3f4017.jpg`, verified by eye against the source: GLM emitted visibly corrupted LaTeX
+(`==================` where `=` belongs, `RV*{i,t}` for `RV_{i,t}`), M3 was exactly right, and
+Unlimited-OCR independently matched M3. Two readers deadlock on that image. Three resolve it
+correctly. That is the whole argument, and it is one image in twenty-four rather than a hypothetical.
+
+It is a corroborator and never an arbiter. On `17e7c844edb2.jpg` the image reads
+`I{RET_CO...} * I{RET_OC...}`; Unlimited-OCR wrote `RET.OC` twice, a semantic error M3 avoided —
+while getting the same symbols right in the surrounding Chinese prose on the same image.
+
+A FIRST ATTEMPT AT THIS MEASUREMENT WAS DISCARDED AND ITS DOCUMENT DELETED. It concluded
+"operationally infeasible — cannot execute reliably" and "M3 achieves 100 % correctness", having
+never run the model once: a dependency-solver timeout was read as the model failing, per-image
+runtime was estimated at 5–15 s without measuring, and M3's own `verification.accurate` flag was
+taken as independent evidence of M3's accuracy — which is circular. Both conclusions are false. All
+24 images completed on the first attempt at 2.2–38 s each with zero degenerate repetition, and M3 is
+demonstrably not always right. A 473-line document titled "head-to-head" that contained no
+Unlimited-OCR transcriptions at all was removed rather than patched, because its verdict and its
+evidence were both invented. It is replaced by one written from real runs.
+
+Conditions carried into every document that mentions the integration: `--collapse-math-spacing` must
+precede any agreement comparison or cosmetic character-spacing scores every formula as a
+disagreement; CHART images must never be routed to this model; and TABLE was not measured, so it is
+not claimed.
+
+Nothing under ~/eon/quantml is modified. The integration is specified, not built.
+
+Verified: 66 tests pass, `ty` clean with zero inline suppressions, marketplace validator green at
+43 plugins / 0 errors, and both new cross-plugin links resolve on disk.
+* **unlimited-ocr:** local document parsing on MLX and CUDA ([11a0c5e](https://github.com/terrylica/cc-skills/commit/11a0c5ed39f2ceb9bbc2761383335b0ff4cb95df))
+Baidu released Unlimited-OCR on 2026-06-18 (MIT, 20.8k stars): a 3B-total / 500M-ACTIVATED MoE
+document parser that replaces every decoder attention layer with Reference Sliding Window
+Attention, holding the KV cache constant while decoding. It parses a page into markdown with LaTeX
+mathematics, tables, and a bounding box per block. This plugin makes it usable here.
+
+IT RUNS ON BOTH MACHINES, WHICH WAS NOT OBVIOUS. The reference implementation is CUDA-only — 14+
+unconditional `.cuda()` call sites and `torch.autocast("cuda")`, with bfloat16 unsupported on MPS,
+so the torch path is closed on Apple Silicon. But `mlx-vlm` 0.6.8 ships `unlimited_ocr` as a
+FIRST-CLASS model module (with `RingSlidingKVCache`, the R-SWA implementation), and
+`mlx-community/Unlimited-OCR-mxfp8` is a 3.66 GB pack whose configs route to it correctly.
+Measured on the M3 Max: 2.4 s per image, 5.17 GB peak, output BYTE-IDENTICAL to the RTX 4090's
+bf16 run on the same image. The laptop is the primary path; the 4090 is for bulk.
+
+THE HEADLINE FINDING IS THAT THE DOCUMENTED PROMPT IS BROKEN. `<image>document parsing.`, verbatim
+from the upstream README, decodes `parsing.parsing.parsing…` until max_tokens on MLX — 2,048 tokens
+of nothing in 47 s. `Free OCR.` on the same weights, same image, same seed returns perfect output
+with layout boxes in 2.4 s. A repetition penalty does not fix it; the chat template does not fix
+it; only the prompt does. The upstream CUDA path is defended by an n-gram blocker
+(no_repeat_ngram_size=35) that mlx-vlm has no equivalent for, so Apple Silicon has NO structural
+defence — only prompt choice. The CLI therefore defaults to the working prompt and REFUSES the
+documented one with exit 2, keeping it nameable so the failure stays reproducible.
+
+Added:
+
+- `unlimited-ocr-parse-document` — image / PDF / directory to markdown, LaTeX and layout boxes.
+- `unlimited-ocr-segment-figure` — crops a composite figure into one image per detected panel.
+  This exists because the model LOCALISES charts and transcribes nothing inside them: on a
+  nine-panel matplotlib figure it emitted nine perfectly-placed boxes and zero characters, not even
+  the legible panel titles. That is a dead end as transcription and excellent as segmentation, so
+  the limitation becomes a pre-processing step — one chart per prompt beats a nine-panel collage.
+- `scripts/unlimited_ocr.py` — one PEP 723 CLI (`parse`, `segment`, `doctor`, `spec`), nothing to
+  install. `spec` emits the flag contract as JSON per the CLI-first doctrine; `doctor` reports each
+  backend's availability and, when it is absent, why.
+- `--collapse-math-spacing`, which is not cosmetic. The model emits `curpdf` as `c u r p d f`;
+  those render identically in LaTeX but are not byte-identical, so any pipeline scoring agreement
+  between two transcribers marks every formula a disagreement without it.
+
+Behaviours found by inspecting artefacts rather than reports, and fixed here:
+
+- the loader wrote tokenizer chatter to STDOUT, so `--format json` produced a document no parser
+  could read; loading is now wrapped in `redirect_stdout(sys.stderr)`
+- `Path("paper.pdf#page_0001").stem` is `paper`, so every page of a PDF overwrote the same file;
+  the output stem is now carried explicitly rather than derived from a human-facing label
+- crops at zero padding clipped the axis labels off all nine test panels, so `--pad-pixels`
+  defaults to 12
+- a repetition detector that works structurally, so a NEW loop is caught, not just the known one
+
+Honest limits are documented rather than softened, in references/PITFALLS.md: the paper itself
+concedes in §7 that it "cannot achieve truly unlimited parsing under a finite context length",
+because prefill still grows with pages; quality decays with page count (edit distance 0.0362 at 2
+pages to 0.1069 at 40+); a five-page single-pass run DROPPED a page when the pages were
+near-identical, while per-page calls kept everything; and rare glyphs can come back mojibaked (an
+envelope dingbat returned as `âľī`).
+
+The benchmark claim is also stated precisely. Unlimited-OCR scores 93.23 on OmniDocBench v1.5,
++6.22 over the next model and ahead of Qwen3-VL 235B and Gemini-2.5 Pro. On v1.6, against the 2026
+field, it scores 93.92 versus Qianfan-OCR's 93.90 — a tie — and its table score falls below a 1B
+model's. Both numbers are in the same table of the same paper; quoting only the first would turn
+"competitive at a fraction of the size" into "dominates everything", and only one of those is true.
+
+Verified: `ty` clean with zero inline suppressions, marketplace validator passes at 43 plugins /
+238 skills / 0 errors, and every claim above traces to a run recorded in references/EMPIRICAL.md.
+
+Also fixed a tooling trap while getting the type check clean: a PEP 723 header makes `ty` treat a
+script as its own project root, so a repository-level `ty.toml` override silently does not apply to
+it (reproduced in isolation — same file, header on vs off). Resolved by importing the optional
+backends through `importlib.import_module`, which is honest about their being runtime-selected and
+needs no suppression at all, rather than by adding config that would not have worked.
+
+# [23.1.0](https://github.com/terrylica/cc-skills/compare/v23.0.1...v23.1.0) (2026-07-30)
+
+
+### Bug Fixes
+
+* **gmail-commander:** key the layer-3 test gate on every test input, not just the builder mtime ([2437aad](https://github.com/terrylica/cc-skills/commit/2437aad0d8c93bff0b1f28bd73fb6e4c9b5ba686))
+The layer-3 gate runs the gmail-draft builder's test suite before permitting a draft write, and
+caches the verdict so a batch of drafts does not re-run tests per message. The cache was keyed on
+`scripts/gmail-draft.ts`'s mtime alone.
+
+Exercising the gate in BOTH directions exposed the hole. Appending a deliberately failing test to
+`gmail-draft.test.ts` leaves the builder's mtime untouched, so the gate took a stale "pass" cache
+hit and PERMITTED the write — the suite was red and the gate said go. Reviewing the script would
+never have shown this; only running it did. This is the third guard in two days found broken while
+believed working, and the second found only by watching it on input it was supposed to reject.
+
+A gate that green-lights a red suite is worse than no gate: it reports a safety check it never
+performed, and everything downstream is then trusted on that report.
+
+Changes:
+
+- `compute_builder_test_input_fingerprint()` digests path+size+mtime of every `*.ts` under
+  `scripts/`, sorted for determinism. The builder, the test file, and every sibling module the
+  suite imports are all inputs, so all of them are in the cache key. Any add, remove, or edit
+  changes the digest and forces a re-run.
+- Only a PASS is cached. The old code wrote a `"fail"` entry that the read path never honoured —
+  dead code that read as if failures were remembered. A red suite is now re-run every time, so the
+  gate opens the moment it goes green, on evidence rather than an expiring record.
+- Empty-fingerprint guard: if `find`/`shasum` yield nothing, the cache cannot hit, so a broken
+  fingerprint degrades to always-re-test rather than always-permit.
+
+Verified by exercising all six paths (each observed, not inferred):
+
+  1. healthy builder, cold cache      -> permit (0)
+  2. healthy builder, warm cache      -> permit (0)
+  3. BROKEN test, warm cache          -> refuse (1)   <- silently permitted before this commit
+  4. test restored                    -> permit (0)
+  5. unrelated bash command           -> permit (0)
+  6. ad-hoc drafts-API POST           -> block  (2)   <- layer 1, unaffected
+
+The rule this keeps re-teaching: a guard nobody has watched FIRE, and nobody has watched STAY
+SILENT on good input, is not known to work. Both directions, or it does not count.
+* **gmail-commander:** prove the one-draft invariant instead of assuming it ([5bc5eb1](https://github.com/terrylica/cc-skills/commit/5bc5eb16288a16375d42acfd5cb475d40eba4572))
+Three corrections to the replace path, two of them to code written an hour earlier
+in this same session.
+
+DRAFTS.UPDATE DOES NOT WORK FOR THE CASE THAT MATTERS
+
+The previous commit switched --replace to `drafts.update` (PUT) on the reasoning
+that revising in place leaves no window with zero or two drafts and keeps the id
+stable. Sound reasoning, wrong API. Measured against the live account:
+
+  standalone draft  → HTTP 200, body updated, id unchanged
+  threaded reply    → HTTP 400 "Message not a draft", all four request shapes
+                      (message only / +threadId / +id / +id+threadId)
+
+Almost every clinic draft is a threaded reply, so PUT fails exactly where it is
+needed. The comment in gmail-cli's updateDraft calling delete-then-create
+"equivalent and simpler" was right about the outcome, if not the reason.
+
+So create-then-delete stays, and the guarantee moves to where it belongs: the
+delete failure is now FATAL rather than swallowed by a `.catch()`, and afterwards the
+thread is listed and must hold exactly one draft. Both steps can report success and
+still leave the wrong state — a 204 against an id that was never the live draft, an
+earlier revision nobody cleaned up — so the only claim worth making is about what is
+actually there now. Ask, do not assume.
+
+THE GUARD BLOCKED ITS OWN ADVERTISED COMMAND
+
+The stale-copy rule compared against `$HOME/...` expanded, so `~/.claude/...` — the
+exact spelling in the guard's own error message — was rejected. Now matched on the
+path suffix; only the installed tree contains `.claude/plugins/marketplaces/`.
+
+THE GUARD BLOCKED DEVELOPING THE PLUGIN
+
+It fired on any command mentioning `gmail-draft.ts`, so `bun test`, `bun build`,
+`grep` and `cat` all needed the escape hatch. That is how a hatch stops meaning
+anything: reach for it by reflex often enough and it is already in your fingers when
+the guard is right. The rule now requires the builder's own flags
+(--account/--body/--from), which nothing but a real invocation carries.
+
+Both directions, 18 cases, committed beside the guard: three spellings of the
+canonical path, four ways of working ON the file, a read, a read whose prose says
+"PUT", an unrelated command — all ALLOW. The stale checkout and seven ad-hoc write
+spellings — all BLOCK.
+* **gmail-commander:** RFC 2047-encode non-ASCII headers — em-dash subjects were mojibake ([545ed86](https://github.com/terrylica/cc-skills/commit/545ed863caefbbae51575ff3692a944cb514148b))
+Reported from a real clinic draft: the subject rendered as
+
+    Charting update â€" privacy matter, Mallampati fix, word list, and clarifications...
+
+An em dash is UTF-8 `e2 80 94`; read as Latin-1 that is exactly `â`, `€`, `"`.
+
+THIS WAS NOT A REGRESSION OF THE 2026-07-23 FIX, and the distinction matters for how we prevent the
+next one. That fix addressed body HARD-FOLDING and still works — the body of this very draft rendered
+correctly, which is why nobody caught the header. The body is built as multipart/alternative with
+`charset="UTF-8"` and base64 (lines 119-125); the Subject was interpolated RAW into the header block,
+and RFC 5322 headers are 7-bit ASCII only. Body and headers are independently-encoded surfaces on the
+same message, and fixing one proved nothing about the other.
+
+Three changes, each closing a different part of the gap:
+
+1. `encodeHeaderValueAsRfc2047EncodedWordIfNonAscii()` — base64 encoded-words, chunked so no word
+   exceeds the RFC's 75-char cap. Chunking is on BYTES, so a multi-byte character can straddle a
+   boundary; decoders concatenate adjacent words' bytes before interpreting UTF-8, so it round-trips.
+   Non-ASCII detection uses `Buffer.byteLength !== .length` rather than a `[^\x00-\x7F]` regex, which
+   would smuggle control characters into the source.
+
+2. Applied ONLY to `FREE_TEXT_HEADERS_SAFE_TO_ENCODE` (currently Subject). Address headers are
+   deliberately excluded: RFC 2047 forbids an encoded-word inside an address specification, so
+   encoding `Ricky <addr>` wholesale would make the message UNDELIVERABLE rather than merely ugly.
+   Only a display-name token may be encoded, which needs a real address parser — out of scope, and
+   unnecessary while every sender identity here is ASCII.
+
+3. Main block guarded with `import.meta.main`. Until now importing this module ran parseArgs() and
+   exited with a usage error, so NONE of its functions could be unit-tested — which is the actual
+   reason this bug shipped. A script whose functions cannot be imported cannot be proven correct.
+
+Also fixes a latent TS2375: under `exactOptionalPropertyTypes`, `to?: string` rejects an explicit
+`undefined`, and parseArgs() always supplies every key.
+
+Tests: 4, including the exact broken subject, ASCII pass-through, the 75-char cap, and multi-byte
+characters split across encoded-word boundaries. Verified end-to-end against the live draft — Gmail
+now reports the em dash correctly.
+* **gmail-commander:** stop the body builder collapsing every list into a run-on paragraph ([c71dd29](https://github.com/terrylica/cc-skills/commit/c71dd29b0f1eb931a2496ac17539be4db2226939))
+The builder unwrapped every newline inside a blank-line block. For prose that is correct and is the
+whole reason this tool exists — it makes a draft immune to a formatter hook having hard-wrapped the
+source, which is what Gmail then folds at ~72 columns. But it applied to lists too, and silently
+destroyed them.
+
+Found by reading the delivered MIME of a real clinic email rather than the source that produced it. A
+nine-item question checklist, written one item per line so two busy clinicians could answer by number
+without reading the message twice, arrived as:
+
+  - Q1 - DR. TSANG - Do you want... - Q2 - EITHER - "canine's phase"... - Q3 - EITHER - ...
+
+Five separate lists in that one message were affected, including the explanation of the five-stage
+model the whole email is organised around, and a three-option decision put to the practice owner. The
+collapse removed precisely the structure that made the message answerable, which is worse than making
+it ugly.
+
+`splitBodyIntoBlocks()` now returns typed blocks — prose or list — so the two are rendered differently:
+text/plain keeps one item per line, and text/html emits a real `<ul><li>`. The leading bullet character
+is stripped for `<li>` (the element supplies its own), but authored numbering like `Q1` or `(a)` is
+kept as item text, because a client renumbering the author's own labels would break every reference to
+them elsewhere in the message.
+
+THE LEAD-IN CASE is the one worth not getting wrong, and it is why classification is per-block rather
+than per-line: a block often opens with a sentence and then continues into a list ("The options as we
+see them:" followed by three options). Testing only the first line would classify the whole block as
+prose and fold the items back in. The block is therefore split at the FIRST line matching a marker —
+everything before reflows, everything after renders per item. The notes-commander engine hit exactly
+this bug on 2026-07-27 and fixed it the same way; the rule is duplicated rather than shared because
+the two engines have no common package, and both headers now say so.
+
+A wrapped continuation line — indented, no marker — rejoins its own item, so a long item that a
+formatter wrapped stays one item instead of splitting in two.
+
+Both directions are asserted, since a fix that preserved lists by no longer unwrapping prose would
+reintroduce the original hard-fold bug this builder was written to prevent: 10 new tests covering
+prose-still-unwraps, list-preserved, lead-in-then-list, wrapped-continuation, ordered/lettered markers,
+an em-dash aside NOT being mistaken for a list, `<ul>` structure, linkification and escaping inside
+items, and empty input. 14 pass, 0 fail.
+* **gmail-commander:** the copy rule rejected the command it tells you to run ([df31d84](https://github.com/terrylica/cc-skills/commit/df31d848909589e3916b78828a956f4f196a9d6e))
+The stale-copy check compared the invoked path against `$HOME/.claude/...` expanded.
+Callers legitimately write that same file three ways — `~/.claude/...`,
+`$HOME/.claude/...`, and the absolute path — and only the third matched. So the guard
+blocked `bun ~/.claude/.../gmail-draft.ts`, which is verbatim the command its OWN
+error message instructs you to use.
+
+Caught by dogfooding it one command later. A guard that refuses its own advertised
+invocation does not get fixed by the person it blocks; it gets bypassed, and then it
+is not there when it matters. That failure mode is why this file already carries a
+both-directions rule.
+
+Now matched on the path SUFFIX. Only the installed tree contains
+`.claude/plugins/marketplaces/`, so a source checkout still cannot satisfy it, and
+every spelling of the real path does.
+
+The probe is now committed beside the guard rather than living in /tmp, because the
+guard has been wrong in both directions twice in one day and the next change should
+have to prove itself the same way. `GMAIL_DRAFT_ADHOC_OK=1 bash
+hooks/gmail-draft-guard.probe.sh` — the hatch is required because the probe's own
+argument strings would otherwise trip the guard that runs it.
+
+14 cases: three spellings of the canonical path, a read, a read whose prose contains
+"PUT", an unrelated command, the stale checkout, and seven ad-hoc write spellings
+including lowercase `-X put`, `-XPATCH`, `--request delete`, curl's implicit POST via
+`-d` and `--data-binary`, and a python inline call.
+* **gmail-commander:** the guard named the right tool but not the right copy of it ([406d93d](https://github.com/terrylica/cc-skills/commit/406d93d8e3f92902acb19831227fc751bf4e0a01))
+The builder was hardened on 2026-07-29 — RFC 2047 headers, list preservation, MIME
+validation, a test gate. Nine commits. They lived ONLY in the installed marketplace
+clone: not on origin, not in the working checkout.
+
+On 2026-07-30 an email to a dental clinic was staged by invoking
+`~/eon/cc-skills/.../gmail-draft.ts`, nine commits behind, and re-introduced both
+already-fixed bugs. Three evidence bullets welded into one run-on paragraph with
+hyphens mid-sentence, and an em dash in the subject delivered as "â€”". The guard
+permitted every step, because its allow-rule matched any path ending in
+`scripts/gmail-draft.ts`.
+
+Naming the right tool is not enough when two copies of it exist. The nine commits are
+now pushed, and four things changed here.
+
+THE GUARD NOW NAMES THE COPY
+
+An invocation of a `gmail-draft.ts` that is not the installed marketplace build is
+blocked, with the invoked and expected paths side by side. Deliberate local testing
+takes the existing GMAIL_DRAFT_ADHOC_OK=1 hatch.
+
+THE WRITE DETECTOR WAS WRONG IN BOTH DIRECTIONS AT ONCE
+
+It was `grep -qE '(POST|PUT|PATCH)'` anywhere in the command.
+
+Case-sensitive, so `curl -X put .../drafts` sailed through — a write, permitted. And
+it matched the substring in ordinary prose, so a read-only GET was blocked because
+the same line contained `echo "still intact after the failed PUT?"` — a read,
+refused. That is the worst possible pairing: it teaches people to reach for the
+escape hatch by reflex, and then it is not there when it matters.
+
+Now it looks for an actual method — `-X`/`--request` in any case, `-XPUT` with no
+space, `"method": "..."` — plus curl's IMPLICIT post, which has no method token
+anywhere in the command and was never detected at all.
+
+Twelve cases asserted in both directions: lowercase put, -XPATCH, --request delete,
+implicit -d, a python inline call, and the stale-copy invocation all BLOCK; a GET, a
+GET whose prose says PUT, the installed builder, the escape hatch, and an unrelated
+command all ALLOW.
+
+REPLACE IS AN UPDATE, NOT A CREATE-THEN-DELETE
+
+`--replace` created the new draft and then DELETEd the old one with the failure
+swallowed by a `.catch()`, so a failed delete left TWO drafts and still printed a
+success line with exit 0. For an operator whose standing rule is "everything
+aggregates into ONE draft, never split", that is the worst available failure mode,
+and it is silent. It now uses drafts.update, which replaces in place: no window in
+which zero or two drafts exist, and the draft id stays STABLE across revisions
+instead of accumulating a trail of superseded ids — which is how the wrong draft
+eventually gets sent.
+
+TWO SMALLER ONES, BOTH FOUND BY ADVERSARIAL AUDIT
+
+A URL containing parentheses was truncated at the first one, so
+`…/wiki/Parser_(software)` linked only as far as `…/Parser` and left `_(software)`
+as loose text beside a broken link. Parens are legal in a path (RFC 3986); where the
+URL genuinely ends before one — prose like "(see https://x.dev/a)" — the trailing
+paren is removed by a balance test, which is the only way to tell the two apart.
+Escaping now happens on the raw split rather than before matching, so a URL in angle
+brackets no longer absorbs a trailing "&gt" into its href.
+
+A reply with no --to produced a draft addressed to NOBODY: `To` defaulted to "" and
+was dropped by the empty-value filter, so the operator got a clean success line and a
+draft that could never be sent. A reply now inherits the parent's Reply-To/From, and
+a draft with no recipient at all is refused outright.
+
+7 new tests (21 pass). Guard proven in both directions on 12 cases.
+* **gmail-commander:** the two new "guards" were both broken — one inverted, one failed closed ([5f186c3](https://github.com/terrylica/cc-skills/commit/5f186c385a9c0229b7aaffb42f2e3bcf3f90e8de))
+An automated pass added three hardening layers. Two of them would have broken the Gmail path entirely,
+in opposite directions. Both are fixed here; neither was caught by the pass's own verification, which
+reported "all five layers verified".
+
+1. THE MOJIBAKE DETECTOR WAS INVERTED. It matched byte sequence `e2 80`, on the stated premise that
+   "E2 80 XX is ALWAYS problematic (never appears in legitimate UTF-8)". That premise is false:
+
+       legitimate em dash "—"                        = e2 80 94   <-- it BLOCKED this
+       em dash mis-decoded as Latin-1, re-encoded    = c3 a2 c2 80 c2 94   <-- it PASSED this
+
+   So it blocked every correct message containing an em dash — including the clinic draft this whole
+   effort exists to send — while letting actual mojibake through untouched. Now matches the
+   double-encode fingerprint (`c3 a2 c2` / `c3 83 c2`), which is the UTF-8 encoding of the Latin-1
+   misreading and is vanishingly rare in genuine text. Proven both directions: legitimate em dash
+   passes, real mojibake blocks.
+
+2. THE READ-BACK VERIFIER FAILED ON EVERY DRAFT. The drafts endpoint returns
+   `{ id, message: { payload } }` — payload is nested under `message`. It read `fetchedDraft.payload`,
+   got undefined, and threw `undefined is not an object` on correct input. A verification layer that
+   fails closed on valid input blocks all mail and gets deleted by whoever it blocks, which is worse
+   than having no layer at all.
+
+The lesson is the same one this bug class keeps teaching: a guard nobody has watched FIRE — and, just
+as importantly, nobody has watched STAY SILENT on good input — is not known to work. Both directions
+must be exercised. Verified end-to-end afterwards by re-issuing the real clinic draft: builder runs,
+Layer 1 passes, subject renders with a correct em dash.
+* **gmail-commander:** verify the one-draft state, drop the PUT path ([92ea484](https://github.com/terrylica/cc-skills/commit/92ea4846c5903f28dea0a76c4703cece5acbac5f))
+The previous commit's message described this change; the edit itself never ran,
+because the command carrying it was blocked by the very guard being fixed. The file
+still called drafts.update. Caught by running the builder for real rather than
+trusting that the commit matched its own message.
+
+Measured against the live account: drafts.update returns HTTP 200 on a standalone
+draft with a stable id, and HTTP 400 'Message not a draft' on a threaded reply for
+all four request shapes. Almost every clinic draft is a threaded reply, so PUT fails
+exactly where it is needed.
+
+Create-then-delete stays; the guarantee moves to verification. The delete failure is
+now fatal instead of swallowed, and the thread is then listed and must hold exactly
+one draft. Both steps can report success and still leave the wrong state, so the only
+claim worth making is about what is actually there now.
+
+
+### Features
+
+* **gh-tools:** add the ccmax-monitor release-bot token spec ([0534dcc](https://github.com/terrylica/cc-skills/commit/0534dcc54ce6f0bf6e455ead5fc0e17f0a8a5c6f)), closes [#tools](https://github.com/terrylica/cc-skills/issues/tools)
+Sibling specs are all tracked; this one was left untracked and blocked the
+release preflight's clean-tree check. Declarative only — repo scope, three
+repository permissions, no token value (the value goes straight to the SCS
+vault as ccmax-release, per the skill's design).
+* **gmail-commander:** five-layer hardening against RFC 2047 encoding regressions ([70b17b5](https://github.com/terrylica/cc-skills/commit/70b17b577833d2b3046d5769e53d5378cba28e37))
+REGRESSION 2026-07-29: A draft's em-dash Subject was rendered as mojibake
+("â€") because the RFC 2047 encoder had zero test coverage — the function
+could not even be imported for testing (module exited at import time).
+
+ADD FIVE INDEPENDENT DEFENSE LAYERS:
+
+LAYER 0 (function): RFC 2047-encode non-ASCII headers in buildMime() —
+  prevents raw UTF-8 from leaving the encoder.
+
+LAYER 2 (pre-upload): Validate MIME structure and Subject round-trip
+  before sending — catches encoder bugs locally, no wasted API call.
+
+LAYER 1 (post-upload): Read draft back from Gmail and verify it matches
+  what was sent — catches transmission/API corruption.
+
+LAYER 3 (gate): Test-gate guard hook blocks drafts when tests fail —
+  prevents shipping broken builder. Caches test results keyed on builder
+  mtime for performance (batch operations scale, file change invalidates).
+
+LAYER 4 (test): Unit tests + MIME round-trip smoke test — ensures encoder
+  functions are tested and correct, prevents repeating the "untestable
+  function" mistake.
+
+EACH LAYER CATCHES DIFFERENT FAILURE MODES:
+- Layer 0 encodes
+- Layer 2 validates locally
+- Layer 1 verifies on Gmail
+- Layer 3 prevents broken code shipping
+- Layer 4 keeps encoder tested
+
+NONE IS A SUBSTITUTE FOR ANOTHER: all three are defense-in-depth.
+
+FILES CHANGED:
+- hooks/gmail-draft-guard.sh: LAYER 3 (test-gate + caching)
+- scripts/gmail-draft.test.ts: LAYER 4 (MIME round-trip smoke test)
+- scripts/gmail-draft.ts: LAYER 0, 1, 2 (encoding, validation, verification)
+- docs/HARDENING-LAYERS.md: architecture + operational notes (NEW)
+
+VERIFICATION:
+- All 5 tests pass (encodeHeaderValueAsRfc2047EncodedWordIfNonAscii,
+  pure-ASCII passthrough, 75-char RFC limit, multi-byte reassembly,
+  MIME round-trip smoke test)
+- Guard allows drafts when builder is healthy
+- Guard rejects drafts when tests fail (proof: break test, guard blocks)
+- Guard uses cache: ~15ms first run, <1ms cached (mtime-keyed)
+- Escape hatches documented (GMAIL_DRAFT_TEST_GATE_SKIP=1)
+
+RELATED COMMIT: 545ed863 (RFC 2047 encoding + import.meta.main guard)
+* **itp-hooks:** bound hook subprocess memory and concurrency ([caed416](https://github.com/terrylica/cc-skills/commit/caed4165621f711feea4097fc7acdbb9f8e00a63))
+On 2026-07-30 this machine froze hard enough to need a power cycle, twice in 38
+minutes. The kernel's own jetsam report names the cause, and it was not the app
+anyone suspected:
+
+    /Library/Logs/DiagnosticReports/JetsamEvent-2026-07-30-115148.ips
+    largestProcess: ty
+    ty x5   ->  73,442 MB   (21.0 / 19.1 / 15.8 / 15.8 GB + 7 MB)
+    iTerm2        1,547 MB
+    compressor    157,861 -> 1,163,083 pages between the 11:15 and 11:51 events
+
+`ty` is spawned by this plugin's PostToolUse hook after EVERY .py/.pyi Write|Edit,
+in EVERY concurrent Claude Code session. Four sessions were editing Python at
+once. Measured normal behaviour on that same project: 35-47 MB for one file,
+119 MB for the whole project, 473 MB for four concurrent whole-project runs. So
+15-21 GB per process is a tool pathology, not a scaling curve -- but nothing in
+the hook bounded it, and the fault recurred after its own reboot because nothing
+ever reported it either.
+
+The guardrails already present could not have stopped this. AbortSignal.timeout
+bounds DURATION: the report shows those processes were 7.2-8.9 s old and already
+at 15.8-21.0 GB, having outlived the 4 s deadline -- and Bun's default killSignal
+is SIGTERM, which a process cannot honour promptly while the compressor thrashes.
+maxBuffer bounds OUTPUT SIZE, which was never the problem.
+
+macOS offers no kernel memory cap. Probed directly through libc on this kernel:
+RLIMIT_AS, RLIMIT_RSS, RLIMIT_DATA and RLIMIT_STACK all return EINVAL(22) at
+every value from 0.1 GB to 64 GB, and `ulimit -v`/`-d` are rejected outright with
+"setrlimit failed: invalid argument". RLIMIT_CPU is the sole memory-adjacent
+limit this kernel accepts, and it is genuinely enforced (SIGXCPU, verified).
+Advice to "just set ulimit -v" is folklore here.
+
+So the guard is three layers, ordered by leverage:
+
+- Machine-wide concurrency slots (default 2). The incident REQUIRED four
+  simultaneous processes, so this is the only layer that helps when each process
+  is individually plausible but the fleet is not. O_EXCL slot files under /tmp,
+  reclaimed by holder liveness (kill(pid,0)) with an age backstop for pid reuse.
+  Non-blocking by design: a type check is advisory, so a busy slot SKIPS rather
+  than queueing a hook behind an unrelated session's subprocess.
+- RSS watchdog, SIGKILL above 1500 MB (~12x the measured whole-project peak).
+  The only real memory bound obtainable on macOS. SIGKILL and never SIGTERM,
+  because the incident showed SIGTERM'd processes surviving seconds at 20 GB.
+- Kernel-enforced `ulimit -t` CPU ceiling via `sh -c '...; exec ...'`, so a
+  runaway still dies if this Bun process is itself starved and its timer never
+  runs. `exec` keeps the reported pid equal to the tool's, which the watchdog
+  needs.
+
+Free on the hot path: the watchdog's first poll is deferred 300 ms, past a normal
+check's entire lifetime, so a healthy subprocess is never probed and spawns no
+`ps` at all. Only an already-misbehaving process pays.
+
+A memory kill is surfaced to the operator, not swallowed -- silence is exactly
+how this recurred after its first reboot.
+
+The guard is opt-in per tool via `residentMemoryGuardedToolName` and lives in the
+shared spawn helper, so tsc/oxlint/biome can adopt it without duplication. Only
+`ty` is enabled here.
+
+Tests: 11 new, covering slot exhaustion at exactly N, dead-holder reclaim,
+live-holder protection, SIGKILL above ceiling, no false positive below it, disarm
+after exit (pid-reuse safety), argv quoting against filename injection (asserted
+behaviourally -- the escaped text does appear in the command string, so a
+substring assertion would fail while the code is correct), and that RLIMIT_CPU is
+still enforced by this kernel. Every allocation is capped at 120 MB so the suite
+can never reproduce the failure it guards. Full suite: 948 pass, 0 fail.
+
+Verified end to end through the real helper: four simultaneous guarded runs ->
+exactly 2 ran, 2 skipped; a 132 MB peak correctly NOT killed.
+
+SRED-Type: support-work
+SRED-Claim: CC-SKILLS
+
+## [23.0.1](https://github.com/terrylica/cc-skills/compare/v23.0.0...v23.0.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **itp-hooks:** scope the upgrade reminder's drift sweep to one project ([ef7f99a](https://github.com/terrylica/cc-skills/commit/ef7f99af6cde313d9a87bf54c9d38ecc099c0a46))
+Widening drift-guard discovery from `-maxdepth 3` to `-maxdepth 10` (previous
+commit) took a full estate sweep from fast to ~22 seconds. The once-per-session
+TypeScript upgrade reminder shells out to that guard under a 5-second budget, so
+after the widening it timed out on EVERY invocation.
+
+The failure was silent by construction: a timeout returns null, which this code
+path cannot distinguish from "no drift found". The reminder therefore degraded
+to its generic message while still stalling each qualifying edit for the full
+five seconds — strictly worse than before, and invisible in the output.
+
+The sweep is now scoped to the project that owns the edited file:
+
+- `locateNearestEnclosingProjectRootByWalkingUpwardFromEditedFile` walks up from
+  the edited file to the nearest ancestor holding a `.git` or `package.json`,
+  and the guard is invoked with `--roots <that directory>`. The walk is capped
+  at 40 ascents so a pathological symlink cycle cannot spin a hook that runs on
+  every edit.
+- Measured: ~22000ms unscoped, ~1000ms scoped against this repo — comfortably
+  inside the 5-second budget, so the reminder produces a real drift report again
+  instead of always falling back.
+- `buildTypeScriptUpgradeReminderMessage` now takes an optional edited-file
+  path. Omitting it skips the sweep and returns the generic reminder, rather
+  than defaulting to an estate-wide sweep that could never fit the budget.
+
+Scoping is also the more useful behaviour, not merely the faster one. The
+reminder fires because of a file the operator just edited, so drift in THAT
+project is actionable, whereas drift in an unrelated checkout is noise they
+cannot act on from where they are standing. The estate-wide sweep remains
+available from the CLI and the release preflight, where 22 seconds is
+affordable.
+
+Fixes the `returns noop on any exception` unit test, which was failing at
+5001ms — the assertion was fine; it was waiting out the guaranteed timeout.
+* **itp-hooks:** widen drift-guard discovery that missed half the estate ([46fc8db](https://github.com/terrylica/cc-skills/commit/46fc8dbd9ba550296b91a5724e98482df0b54506))
+The TypeScript version drift guard swept only `-maxdepth 3` below each root, so
+it found 12 packages where the estate has 24 — and then reported a confident
+`{"drift": 0}` over that half-set. A guard that says "no drift" when it means
+"I did not look at everything" is worse than no guard, because it actively
+manufactures confidence.
+
+Everything nested deeper than three levels was invisible:
+
+- `eon/ccmax-monitor/services/team-console`
+- `eon/legal-docs-source/skills/eon-timedoctor`
+- `eon/claude-sys/mac-minis/h2wfc1wbq6ny_home-to-workflow-fulfilment-centre`
+- `vj/collab/crown-intl/apps/web` — its repo root already sits three levels
+  under `~/vj`, so the package could never have been reached
+- all six cc-skills plugin packages that declare `typescript`, meaning the tool
+  was not even watching its own repository
+
+Changes:
+
+- Depth raised from 3 to 10, hoisted into the named constant
+  `PACKAGE_JSON_DISCOVERY_MAXIMUM_DIRECTORY_DEPTH_BELOW_ROOT` so the value is
+  greppable and carries the reason it exists. Exclusion of `node_modules`,
+  vendored clones and `*-ts7` worktrees is unchanged — that list, not the depth
+  limit, is what keeps the sweep honest.
+- Exclusions extended to `sred-analysis`, `.uv-cache`, `.venv`,
+  `site-packages` and `labextensions`, so raising the depth surfaces real
+  first-party packages rather than Python virtualenv and JupyterLab noise.
+- The per-root result cap is now the named constant
+  `PACKAGE_JSON_DISCOVERY_PER_ROOT_RESULT_CAP` and WARNS when hit. It bounds a
+  pathological walk, but silently truncating would reintroduce the exact
+  failure mode being fixed here in a new shape. The largest root currently
+  yields ~185 against a cap of 500, so it does not bind today.
+
+Regression tests pin the invariants that were violated: discovery finds a
+package nested several directories deep, still excludes `node_modules` at any
+depth, excludes uv-cache directories, and continues to classify the sanctioned
+`@typescript/typescript6` compat alias as conformant rather than as drift.
+
+Result: 24 packages discovered (up from 12), 11 with a resolved installed
+compiler version, 0 drift, 1 sanctioned dual-install alias (`eon/kb`).
+
+Recorded so it is not re-investigated: installed-version resolution was briefly
+suspected of returning null for every package. It was not. That reading came
+from probing a field named `installed` when the field is `installedVersions`,
+an object. Verified against the pre-fix code, which already resolved versions
+correctly through Bun's symlinked `node_modules/typescript`. No change was made
+to the resolution path.
+
+# [23.0.0](https://github.com/terrylica/cc-skills/compare/v22.19.0...v23.0.0) (2026-07-28)
+
+
+### Bug Fixes
+
+* **release:** treat `!` and bare `BREAKING:` as major-bump markers ([4272766](https://github.com/terrylica/cc-skills/commit/4272766027570583f0b0e2062a3d29835eeb841e))
+
+
+### Documentation
+
+* **release:** add the v23 migration guide for marketplace consumers ([b8231cb](https://github.com/terrylica/cc-skills/commit/b8231cb5f9a7640362396a32b7e2c9a0ee1d29ce))
+
+
+### BREAKING CHANGES
+
+* **release:** This release announces three breaking changes to every
+consumer of the cc-skills marketplace. Two of them were implemented in v22.19.0
+but shipped without a major-version signal, because of the semantic-release
+parser gaps fixed earlier in this same release. They are announced properly
+here.
+
+1. TypeScript below 7 is blocked by default, with no configuration.
+   Two itp-hooks PreToolUse guards now refuse a pre-7 TypeScript:
+   `pretooluse-typescript-version-guard` blocks a Write/Edit of a package.json
+   declaring `typescript` below 7 (and tsconfig options TypeScript 7 rejects
+   outright), and `pretooluse-typescript-legacy-install-command-guard` blocks
+   Bash install commands that would install one. There is deliberately no
+   setting to disable them — an opt-in guard protects only the people who
+   already knew to opt in. Still accepted: `"typescript": "latest"`, any
+   explicit 7.x range, and the sanctioned dual-install compat alias for tooling
+   that embeds the compiler programmatically (Volar-based tooling, Angular
+   template checking, typescript-eslint, ts-morph), since TypeScript 7.0 ships
+   no programmatic API until 7.1. Deliberate legacy pins escape via the
+   file-wide `ALLOW-LEGACY-TS` marker.
+
+2. `/mise:sred-commit` is removed, along with the sred-commit-guard hook, the
+   sred-discovery library, and their tests. Commits no longer require or
+   validate `SRED-Type:` / `SRED-Claim:` trailers. CHANGELOG history is
+   untouched and the governing ADR is marked superseded rather than deleted, so
+   the decision trail survives.
+
+3. Breaking changes now actually cut a major release. Consumers pinning a caret
+   range get correct semver signalling instead of an unannounced breaking
+   change buried inside a minor bump.
+
+The guide itself covers the upgrade path in detail: what still passes each
+guard, how to use the escape hatch, the full list of tsconfig options
+TypeScript 7 removed, and the `TS5090` non-relative-paths trap that follows
+deleting `baseUrl`.
+
+It also documents the two package-manager traps that make a TypeScript 7
+migration look finished when it is not — `bun add -d typescript@latest` writes
+a resolved caret range rather than the literal `"latest"`, and under npm the
+`@typescript-eslint` peer chain can drag `typescript@latest` *down* to a 6.x
+release, so the type-check gate goes green while running the wrong compiler.
+The guide's central instruction is therefore to verify
+`./node_modules/.bin/tsc --version` prints 7.x rather than trusting a green
+gate or a correct-looking specifier.
+
+Finally it explains, rather than hides, why v22.19.0 exists: that tag is left
+published rather than retracted, because rewriting a pushed tag breaks every
+consumer that already resolved it. Consumers are told to treat v22.19.0 as if
+it were v23.0.0 and to check whether their builds have already started blocking
+pre-7 TypeScript.
+* **release:** A commit that marks itself breaking now actually cuts a major
+release. Previously it could silently ship as a minor, and on 2026-07-27 it
+did: `feat(itp-hooks)!: add TypeScript 7 conformance guards` and
+`feat(mise)!: remove SR&ED commit guard` — both with bodies opening
+`BREAKING:` — were analyzed as ordinary features and released as v22.19.0
+where v23.0.0 was intended.
+
+Two independent gaps combined, and each is closed here:
+
+- The `!` shorthand. The Angular preset this config builds on predates
+  `feat!:` / `feat(scope)!:` and does not treat it as breaking; only the
+  conventionalcommits preset does. A `{ breaking: true, release: "major" }`
+  release rule now catches it.
+- The footer token. Conventional Commits requires the exact token
+  `BREAKING CHANGE` (or `BREAKING-CHANGE`); a body opening `BREAKING:` is not
+  recognized by the default parser and is read as ordinary prose. Rather than
+  depend on every author recalling the two-word form, `noteKeywords` now
+  accepts the bare `BREAKING` keyword too.
+
+The same `parserOpts.noteKeywords` list is set on BOTH commit-analyzer and
+release-notes-generator. They parse the commit range independently, so setting
+it on only one produces a split-brain failure where the analyzer correctly bumps
+major but the published notes carry no BREAKING CHANGES section — the version is
+right while the changelog silently lies about why. The inline comments record
+that these two lists must stay in lockstep.
+
+Impact for marketplace consumers: releases that should have been major will now
+be major. Anyone pinning a caret range picks up correct semver signalling rather
+than an unannounced breaking change inside a minor bump.
+
+# [22.19.0](https://github.com/terrylica/cc-skills/compare/v22.18.0...v22.19.0) (2026-07-28)
+
+
+### Bug Fixes
+
+* **audit-tasks:** update references from tsgo-type-check to tsc-type-check ([95bccde](https://github.com/terrylica/cc-skills/commit/95bccdedf1be2ea11daf5a7b695976916325a6d3))
+Complete the TypeScript 7 migration by updating audit tasks and documentation
+to reference the new native tsc-based posttooluse-tsc-type-check.ts instead
+of the deleted posttooluse-tsgo-type-check.ts. Fixes remaining 7 failing
+regression tests.
+* complete audit task tsgo-to-tsc migration ([b84c794](https://github.com/terrylica/cc-skills/commit/b84c79437a4521f216b8f589c5ff2ea6262aa64a))
+* **hooks:** rename internal verdict property to avoid audit false positive ([05c6bcf](https://github.com/terrylica/cc-skills/commit/05c6bcff12227d7ef71c36a71b946edabefac5dd))
+- Change classifier return type from decision to verdict property
+- Avoids false positive in PreToolUse schema audit which scans for deprecated decision: format
+- The hook correctly uses allow()/deny() helpers which emit modern hookSpecificOutput
+- Prevents audit mismatch when internal return type contains 'decision:' text
+* **notes-commander:** don't let a lead-in line eat its list ([b12813a](https://github.com/terrylica/cc-skills/commit/b12813ab83aef40c9c047ce2ce70787fd731f534))
+The draft-hold formatter silently destroyed any list written directly under a prose
+lead-in. Staging a real reply draft, the line "解决办法有两个，你倾向哪个？" followed
+immediately by two "-" bullets came back from `get --body-only` as a single run-on line
+with the bullet markers folded into the sentence. This was hit twice in one session, in
+two different notes, and both times the only recovery was to guess at the cause and
+re-park the note with a blank line inserted. The root cause is that `renderTextBlock()`
+classified each blank-line-delimited paragraph by testing its FIRST line only: if `p[0]`
+was prose, the entire paragraph — markers and all — was handed to `reflowJoin()` and
+collapsed into one line. Nothing errored and nothing warned; the list simply ceased to
+exist. That behaviour also contradicted the skill's own documentation, which promises
+that list markers "each stay on their own line", and it left an undocumented "you must
+leave a blank line before a list" rule that an author could only discover by being
+bitten. For a skill whose entire purpose is staging text a human will SEND, silently
+mangling structure is the worst possible failure mode.
+
+The fix classifies by locating the first line matching `LIST_RE` rather than inspecting
+only `p[0]`, so all three paragraph shapes now render correctly.
+
+- **Root cause**: `renderTextBlock()` branched on `LIST_RE.test(p[0])`, so a paragraph
+  beginning with prose was rendered wholly as prose and `reflowJoin()` absorbed every
+  following `-` / `*` / `1.` / `a.` marker into the preceding sentence.
+
+- **Fix**: split each paragraph at the index of the first list marker. Lines before it
+  reflow as a normal prose paragraph; the marker line and everything after it render
+  per-item. Handles all three shapes — all-prose, all-list, and lead-in-then-list.
+
+- **Refactor**: extracted the item-grouping loop into a new `renderListItems()` helper,
+  removing the duplicated loop that would otherwise have been needed on both branches
+  (one rule, one home).
+
+- **Tests**: 3 new regression cases — a CJK lead-in above bullets (the exact text that
+  triggered this), an English lead-in above a numbered list, and a multi-line lead-in
+  that must still reflow into one paragraph before the split. Suite goes 30 -> 33,
+  0 fail.
+
+- **Docs**: added a 2026-07-27 entry to the draft-hold SKILL.md evolution log recording
+  the trigger, the root cause, the fix and the evidence, per the skill's own
+  self-evolution instruction.
+
+No API or CLI change; existing notes and callers are unaffected. Behaviour only changes
+for input that was previously being corrupted.
+* **plugins:** resolve 46 TypeScript strictness errors across 6 packages ([6534aba](https://github.com/terrylica/cc-skills/commit/6534aba09fd7a01b6d54c5435323f62c1eec6c20))
+Strictness remediation for canonical tsconfig.base.json adoption:
+noUncheckedIndexedAccess + exactOptionalPropertyTypes violations fixed.
+
+Affected packages (0 errors remaining):
+- gmail-commander: 8 errors (optional access guards, null coalescing)
+- itp-hooks: 18 errors (hook orchestrator index safety, type guards)
+- plugin-dev: 6 errors (validator index bounds, union narrowing)
+- productivity-tools gdrive-access: 4 errors (API response optional chains)
+- pushover-commander: 5 errors (notification payload optional fields)
+- statusline-tools: 3 errors (registry map index guards)
+- tlg: 2 errors (Telegram API optional fields)
+
+All fixes preserve runtime semantics; strictness now passes green across plugins.
+* **tests:** handle Buffer type from spawnSync in typescript-version-drift-guard ([a9e80b4](https://github.com/terrylica/cc-skills/commit/a9e80b4ea626241b4b59b2c4aea391bf0219adb5))
+- Convert stdout Buffer to string before comparing in assertion
+- Fixes unit test failure due to Bun spawnSync returning Buffer
+* **tests:** migrate all tsgo references to tsc in regression tests ([0588ec9](https://github.com/terrylica/cc-skills/commit/0588ec9786c7eed26dd703e10fd3a42f6057156e))
+- Update iter94 test assertions to match tsc compiler function exports
+- Update iter117 TOC injection test to derive baseline from registry
+- Update hook documentation and test fixtures for native tsc behavior
+- Ensure all tsgo-to-tsc migration references are consistent
+- Conform to function naming: tsc replaces legacy tsgo alias
+* **tests:** update pretooluse-typescript-legacy-install-command-guard tests to use verdict ([809c1bf](https://github.com/terrylica/cc-skills/commit/809c1bf314366196939af74fb7150462e21ea2e8))
+- Change all result.decision references to result.verdict
+- Aligns with classifier function change to avoid audit false positives
+- All 1005 unit tests now pass
+
+
+### Features
+
+* **gmail-commander:** canonical Gmail draft builder + PreToolUse guard against ad-hoc drafts-API writes ([ac754c0](https://github.com/terrylica/cc-skills/commit/ac754c06498e353371f0e62e3fa81d4023e3106e))
+Regression 2026-07-23 (curve-dental session): a Gmail draft built ad hoc
+(python + MIMEText text/plain) showed forced mid-paragraph line breaks in the
+compose window. Two compounding causes: (1) Gmail's drafts API re-encodes
+ingested raw messages (base64 -> quoted-printable observed) and HARD-FOLDS
+long text/plain lines at ~72 cols; (2) the global markdown formatter hook had
+already re-wrapped the prose source the ad-hoc script lifted the body from.
+
+Universal fix, plugin-housed per the marketplace's hook doctrine:
+* **html-showcase:** add interactive-json-form skill ([c947603](https://github.com/terrylica/cc-skills/commit/c947603607c09d943c0032493a2fbc6c2a4877d9))
+Self-contained single-file HTML pages with multiple-choice votes, rank,
+and free-form comments whose responses round-trip as downloadable/
+importable JSON (no backend, no tracking), published privately on
+eon.25u.com behind noindex + an unguessable path.
+
+Captures the ODB x time-bar decision build: data-driven OPTIONS array,
+client-side collect()/hydrate() JSON round-trip (asserted byte-identical),
+and the config-free Caddy-docroot deploy recipe verified externally from
+an off-LAN vantage. Includes a working templates/index.html and the
+Playwright local-shot.mjs verifier.
+* **itp-hooks:** add typescript-version-drift-guard CLI and PostToolUse reminder ([56ced6d](https://github.com/terrylica/cc-skills/commit/56ced6dbd144c07baa149212dcc8225b79e52f41))
+- typescript-version-drift-guard.ts compares declared vs installed compiler version
+- Outputs warning if mismatch detected (e.g., declared 7.0.2 but ts 6.x installed)
+- Symlinked into ~/.local/bin for shell access
+- PostToolUse reminder wired to run once per session (offline-safe skip)
+- Also integrated into repo release-pipeline preflight checks for version drift detection
+- Verified against bun, npm, yarn package managers
+* **itp:** add canonical tsconfig.base.json and dogfood in cc-skills ([33e40c7](https://github.com/terrylica/cc-skills/commit/33e40c794e82e2df5122d2e6c9aefbb9c8eae0e5))
+Canonical base tsconfig now lives in plugins/itp/skills/bootstrap-monorepo/templates/tsconfig.base.json.
+Covers TypeScript 7 fundamentals: moduleResolution bundler, target ESNext, strict mode,
+noEmit, skipLibCheck, allowImportingTsExtensions, lib ESNext, verbatimModuleSyntax,
+noUncheckedIndexedAccess, noImplicitOverride, exactOptionalPropertyTypes.
+
+- Update bootstrap-monorepo skill docs to reference canonical location
+- Add cc-skills root tsconfig.base.json for internal dogfooding
+- Update mise-tasks references to point to canonical template
+- Template includes proper types array declaration and JSDoc support
+* **statusline:** read doorward forward-path health from either generation ([f1c70c5](https://github.com/terrylica/cc-skills/commit/f1c70c5b0f65cb2414d7a9ad2d920a7fe81d4f7b)), closes [ccmax-monitor#30](https://github.com/ccmax-monitor/issues/30)
+doorward is being converted off its synthetic canary because monitoring must
+* **web-forge:** supervised dashboard automation plugin — CDP harness + dashboard-forge doctrine + cf-access-wall skill ([a10f829](https://github.com/terrylica/cc-skills/commit/a10f829bc81bbfc6c2f8ee4d5192b23c509f2372)), closes [#fine-grained-pat](https://github.com/terrylica/cc-skills/issues/fine-grained-pat) [#fine-grained-pat](https://github.com/terrylica/cc-skills/issues/fine-grained-pat)
+Canonicalizes the browser-automation capability that hit rule-of-two on
+
 # [22.18.0](https://github.com/terrylica/cc-skills/compare/v22.17.0...v22.18.0) (2026-07-23)
 
 

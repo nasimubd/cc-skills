@@ -1,0 +1,55 @@
+# python-allowlist.toml — why this plugin ships Python rather than Bun/TypeScript.
+#
+# The house default is Bun/TypeScript for greenfield work (see ~/.claude/principles-CLAUDE.md
+# § "Language selection default"). That default is explicitly overridden by "SOTA-native
+# ecosystem", and local vision-model inference is the clearest possible case of one: the model's
+# only two runtimes are `mlx-vlm` (Apple Silicon) and `torch` + `transformers` (CUDA), both of
+# which are Python-only libraries with no TypeScript binding of any kind.
+#
+# A TypeScript CLI here would not avoid Python — it would shell out to a Python process, so the
+# repo would carry BOTH languages plus a serialisation boundary between them, to run the same
+# inference. That is strictly worse than one Python file.
+#
+# This also matches the polyglot-kernel doctrine: the hot/shared kernel is language-neutral
+# (safetensors weights + a documented prompt/output contract) and Python is the CONSUMER, not the
+# source of truth. The output contract lives in references/EMPIRICAL.md and is emitted
+# machine-readably by `unlimited_ocr.py spec`, so a future Bun caller can consume it without
+# reading a line of this Python.
+
+[[allow]]
+path   = "scripts/unlimited_ocr.py"
+reason = """
+Local Unlimited-OCR inference. Both supported runtimes are Python-only (mlx-vlm on Apple Silicon,
+torch + transformers on CUDA); no TypeScript binding exists for either. A TS wrapper would still
+spawn Python, adding a language and an IPC boundary for zero benefit. PDF rasterisation uses
+PyMuPDF, also Python-only. The CLI contract is emitted as JSON via `spec`, so non-Python callers
+are first-class consumers.
+"""
+
+[[allow]]
+path   = "tests/test_pure_functions.py"
+reason = """
+Pure logic test suite for unlimited_ocr.py functions. Tests must run against the implementation
+written in Python; no TypeScript abstraction exists. Tests are deterministic, require no model
+weights or GPU, and finish in <1s. Follows the documented PEP 723 + pytest convention from
+cc-skills/plugins/productivity-tools/skills/notion-sdk/tests/.
+"""
+
+[[allow]]
+path   = "references/multipage_integrity_experiment.py"
+reason = """
+The archived probe that measured single-pass multi-image page loss (PITFALLS section 3). It calls
+mlx-vlm's Python API directly, deliberately bypassing the CLI, because the CLI does not expose the
+multi-image path being tested. Kept executable and PEP 723 self-contained so the measurement can be
+reproduced rather than taken on trust.
+"""
+
+[[allow]]
+path   = "scripts/unlimited_ocr_batch_folder_parser.py"
+reason = """
+Batch folder parser with checkpoint/resume. Wraps the unlimited_ocr.py CLI for each file, enforcing
+per-image processing and incremental manifest.jsonl updates. Reuses the existing CLI via subprocess
+rather than duplicating the inference and parsing logic. PEP 723 self-contained, no virtualenv needed.
+Both machines (MLX on Apple Silicon, transformers on CUDA) are Python-only runtimes; wrapping in
+TypeScript would add a language boundary for zero benefit.
+"""

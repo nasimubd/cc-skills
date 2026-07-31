@@ -739,7 +739,7 @@ Iter-92 is the **first project in the post-arc PostToolUse orchestration phase**
 
 > "An async PostToolUse hook **cannot reliably inject `additionalContext` next to the tool result**, since the model will have already advanced before the hook finishes. The documented timing — PreToolUse, PostToolUse, PostToolUseFailure, and PostToolBatch place additionalContext next to the tool result — **assumes synchronous completion**. The async flag is therefore intended for side effects like logs, notifications, and backups, **not for the self-correction feedback loop**, which requires the hook to complete before Claude's next model request."
 
-The schema-reasoning argument iter-89 used was incomplete: PostToolUse CAN'T DENY but it CAN INJECT CONTEXT via `{decision: "block", reason}` or `additionalContext`. **Context injection requires synchronous completion just as much as deny does.** Type checkers (`ty`, `tsgo`, `oxlint`, `biome`) and reminder hooks both rely on this same-turn timing — making any of them async breaks the feedback loop that lets Claude self-correct without operator intervention.
+The schema-reasoning argument iter-89 used was incomplete: PostToolUse CAN'T DENY but it CAN INJECT CONTEXT via `{decision: "block", reason}` or `additionalContext`. **Context injection requires synchronous completion just as much as deny does.** Type checkers (`ty`, `tsc`, `oxlint`, `biome` — iter-126 migration: tsc replaces frozen tsgo) and reminder hooks both rely on this same-turn timing — making any of them async breaks the feedback loop that lets Claude self-correct without operator intervention.
 
 **Iter-92 eligibility-classifier task** (`audit-posttooluse-asynctrue-eligibility-classifier-by-decision-block-vs-pure-side-effect-output-pattern-iter92-corrects-iter89-strict-dominance-claim.sh`):
 
@@ -761,7 +761,7 @@ The audit task discovers every PostToolUse hooks.json entry marketplace-wide, re
 
 - Case 1: audit exits 0 (informational; never blocks release pipeline)
 - Case 2: ≥15 PostToolUse hooks discovered marketplace-wide (found 17)
-- Cases 3a-d: 4 type-check / lint hooks (`ty`, `tsgo`, `oxlint`, `biome`) all classified as `[C]` context-injecting
+- Cases 3a-d: 4 type-check / lint hooks (`ty`, `tsc`, `oxlint`, `biome` — iter-126 migration: tsc replaces frozen tsgo) all classified as `[C]` context-injecting
 - Case 4: at least one `additionalContext`-emitting hook flagged (e.g., `rust-sota-reminder`)
 - Cases 5a-c: explicit iter-89 strict-dominance correction banner present; Path A explicitly RULED OUT; Path B recommended as viable replacement
 - Case 6: NO PreToolUse hooks leak into PostToolUse audit (event-type filter correctness)
@@ -779,15 +779,15 @@ Iter-93 is the **first concrete step of Path B** after the iter-92 audit ruled o
 
 **The new PostToolUseSubhookContract** (separate file from the iter-84 PreToolUse contract, `lib/posttooluse-subhook-contract-for-in-process-orchestrator-with-multi-aggregation-additional-context-merging-iter93.ts`):
 
-| Field                          | PreToolUse (iter-84)                            | PostToolUse (iter-93)                                         |
-| ------------------------------ | ----------------------------------------------- | ------------------------------------------------------------- |
-| Decision discriminant          | `"allow" \| "deny" \| "ask"`                    | `"noop" \| "additional_context"`                              |
-| Orchestrator iteration policy  | Serial, first-non-allow short-circuits          | Parallel via `Promise.all`, **runs all subhooks**             |
-| Aggregation                    | None — single decision wins                     | Delimiter-joined into one consolidated reason                 |
-| Wire emission                  | `permissionDecision: "allow"\|"deny"\|"ask"`    | `{decision: "block", reason}` JSON                            |
-| Silent-pass shape              | Single allow JSON                               | Empty stdout (exit 0) when ALL subhooks return noop           |
-| File I/O allowed on no-op path | NO (Edit-path scope-to-changed-lines exception) | YES (PostToolUse fires AFTER side effects durable)            |
-| Typical timeoutMs              | 3000-5000ms                                     | 4000-8000ms (heavier subhooks: ty, tsgo, oxlint, biome, vale) |
+| Field                          | PreToolUse (iter-84)                            | PostToolUse (iter-93)                                        |
+| ------------------------------ | ----------------------------------------------- | ------------------------------------------------------------ |
+| Decision discriminant          | `"allow" \| "deny" \| "ask"`                    | `"noop" \| "additional_context"`                             |
+| Orchestrator iteration policy  | Serial, first-non-allow short-circuits          | Parallel via `Promise.all`, **runs all subhooks**            |
+| Aggregation                    | None — single decision wins                     | Delimiter-joined into one consolidated reason                |
+| Wire emission                  | `permissionDecision: "allow"\|"deny"\|"ask"`    | `{decision: "block", reason}` JSON                           |
+| Silent-pass shape              | Single allow JSON                               | Empty stdout (exit 0) when ALL subhooks return noop          |
+| File I/O allowed on no-op path | NO (Edit-path scope-to-changed-lines exception) | YES (PostToolUse fires AFTER side effects durable)           |
+| Typical timeoutMs              | 3000-5000ms                                     | 4000-8000ms (heavier subhooks: ty, tsc, oxlint, biome, vale) |
 
 The wire-emission row is the load-bearing distinction: PostToolUse cannot use `permissionDecision` (silently dropped per iter-66 schema — the tool already ran by the time the hook fires). The documented Anthropic-schema mechanism for **context injection** on PostToolUse is `{decision: "block", reason}` — the keyword "block" is a misnomer here; it's how Claude surfaces the reason as a system reminder NEXT to the tool result (synchronous timing required — see iter-92).
 
@@ -819,7 +819,7 @@ The wire-emission row is the load-bearing distinction: PostToolUse cannot use `p
 
 **Iter-93 architectural-symmetry surfacing**: the two orchestrators (iter-84 PreToolUse + iter-93 PostToolUse) deliberately use DIFFERENT iteration models because their wire-emission contracts differ — first-deny-short-circuit is correct for PreToolUse (a single deny is decisive), parallel-all is correct for PostToolUse (every additional_context payload contributes signal Claude needs). Future maintainers should resist the temptation to "unify" them via a single base class — the asymmetry encodes a real schema-level constraint.
 
-### Iter-94: PostToolUse arc progress — tsgo inlined (2/15) + async-Bun.spawn perf correction + provenance-prefix aggregation
+### Iter-94: PostToolUse arc progress — tsc inlined (2/15, renamed from tsgo in iter-126) + async-Bun.spawn perf correction + provenance-prefix aggregation
 
 Iter-94 is a **2nd-subhook migration + a critical performance correction** of an iter-93 mistake. The adversarial multi-perspective audit at the top of this iteration surfaced two issues:
 
@@ -827,19 +827,19 @@ Iter-94 is a **2nd-subhook migration + a critical performance correction** of an
 
 > "With `Bun.spawnSync`, true parallelism is impossible from a single thread — each call must finish before the next line of JS runs. With `Bun.spawn`, N child processes can run truly in parallel at the OS level while your event loop continues servicing other work."
 
-That meant the iter-93 orchestrator's `Promise.all` over N subhooks yielded **zero actual parallelism** — every type-checker spawn serialized at the OS level even though the JS code looked concurrent. Iter-94 refactors `ty-type-check` to `Bun.spawn` (async) with `AbortSignal.timeout()`-driven cooperative cancellation, and inlines `tsgo-type-check` async-from-day-one. The shared helper `executeBunSubprocessAsyncWithAbortSignalCooperativeTimeoutAndStreamDrain` lives in both classifier source files (centralizing the spawn pattern so future migrations don't drift) and reads stdout/stderr CONCURRENTLY with the `.exited` promise via `new Response(stream).text()` (the idiomatic 2026 Bun pattern; deadlock-free).
+That meant the iter-93 orchestrator's `Promise.all` over N subhooks yielded **zero actual parallelism** — every type-checker spawn serialized at the OS level even though the JS code looked concurrent. Iter-94 refactors `ty-type-check` to `Bun.spawn` (async) with `AbortSignal.timeout()`-driven cooperative cancellation, and inlines `tsc-type-check` (then called tsgo-type-check, renamed iter-126) async-from-day-one. The shared helper `executeBunSubprocessAsyncWithAbortSignalCooperativeTimeoutAndStreamDrain` lives in both classifier source files (centralizing the spawn pattern so future migrations don't drift) and reads stdout/stderr CONCURRENTLY with the `.exited` promise via `new Response(stream).text()` (the idiomatic 2026 Bun pattern; deadlock-free).
 
 **Issue 2: aggregator section ambiguity (usability)**. The iter-93 aggregator joined subhook contributions with a delimiter but offered no signal as to WHICH subhook contributed which section. With N=4 type-checkers all firing on a single `.ts` edit, Claude would have to infer the provenance from the `[TY]` / `[TSGO]` etc. internal tags — which weren't guaranteed to be present or distinctive. Iter-94 prefixes every aggregated section with `[orchestrator-subhook: <registry-name>]` (the function renamed to `aggregatePostToolUseSubhookAdditionalContextMessagesIntoSingleReasonStringWithProvenancePrefixPerSection` encodes the invariant).
 
 **Iter-94 deliverables**:
 
 1. **`posttooluse-ty-type-check.ts` refactored**: `Bun.spawnSync` → `Bun.spawn` (async), with the new shared async-spawn helper, atomic O_EXCL-creation gate-file helper, and a fresh fail-open path for the spawn-failed-to-start case (posix_spawn ENOENT → surface install reminder once per session). All while preserving the dual-export precise+alias naming and the `import.meta.main` standalone guard.
-2. **`posttooluse-tsgo-type-check.ts` migrated as 2nd subhook**: async-from-day-one (no spawnSync legacy). Precise name: `classifyTsgoNativeGoTypeScriptCompilerProjectScopedTypeCheckForPostToolUseOrchestrator` (the "project-scoped" qualifier acknowledges that tsgo reads tsconfig.json and checks the whole project, not just the edited file). Alias: `classifyTsgoTypeCheckForPostToolUseOrchestrator`. Filters subprocess output by the edited file's tsconfig-relative path to avoid basename collisions (e.g., two `index.ts` files in different project subdirs).
+2. **`posttooluse-tsc-type-check.ts` migrated as 2nd subhook** (originally iter-94 as tsgo-type-check, renamed iter-126): async-from-day-one (no spawnSync legacy). Precise name: `classifyNativeTypeScriptCompilerProjectScopedTypeCheckForPostToolUseOrchestrator` (the "project-scoped" qualifier acknowledges that tsc reads tsconfig.json and checks the whole project, not just the edited file). Alias: `classifyTscTypeCheckForPostToolUseOrchestrator`. Filters subprocess output by the edited file's tsconfig-relative path to avoid basename collisions (e.g., two `index.ts` files in different project subdirs).
 3. **Orchestrator aggregator enhancement**: every aggregated section now carries a `[orchestrator-subhook: <name>]` provenance prefix; the function rename encodes the invariant.
-4. **`hooks.json` rewiring**: standalone `posttooluse-tsgo-type-check.ts` PostToolUse entry removed; orchestrator entry's description updated to reflect 2/15 and the iter-94 async-Bun.spawn rule.
+4. **`hooks.json` rewiring**: standalone `posttooluse-tsc-type-check.ts` PostToolUse entry removed (iter-126 update: the iter-94 tsgo entry was renamed tsc); orchestrator entry's description updated to reflect 2/15 and the iter-94 async-Bun.spawn rule.
 5. **Iter-94 static audit task** (`audit-no-bun-spawnsync-in-posttooluse-orchestrator-subhooks-because-it-defeats-promise-all-parallelism-per-bun-docs-and-2026-community-guidance.sh`): parses the orchestrator's import graph, scans every classifier source file for `Bun.spawnSync(` invocations, filters out JSDoc continuation / `//` line comments / backtick-template-literal mentions (emission-pattern audit, not prose-mention audit — mirrors iter-90's PreToolUse additionalContext NON-USE audit pattern), and exits non-zero on any real invocation. Informational gate; release:preflight Check 4n candidate.
 6. **Iter-94 microbenchmark task** (`benchmark-posttooluse-orchestrator-async-bun-spawn-parallelism-gain-versus-hypothetical-spawnsync-serialization-iter94-empirical-confirmation.sh`): median-of-N=5 orchestrator wall-clock across 3 synthetic payloads (.txt non-applicable baseline / .py applicable / .ts applicable). On dev hardware (Apple Silicon M1 Max, 2026-05-21): all medians ≈ 22-26ms — the bun cold-start floor — because both subhooks short-circuit via O(1) extension+existsSync filters. The wall-clock gain from async vs sync becomes visible only when MULTIPLE subhooks actually spawn real subprocesses on the same payload (future state when oxlint, biome, etc. inline).
-7. **Iter-94 regression test** ([14 assertions, all pass](../.mise/tasks/tests/test-posttooluse-edit-time-orchestrator-iter94-tsgo-inlined-as-second-subhook-plus-async-bun-spawn-refactor-defeats-the-spawnsync-promise-all-anti-pattern-with-provenance-prefix-aggregation-and-static-audit-gate.sh)): orchestrator imports BOTH classifiers, registry ≥ 2 entries, dual-export naming present, NEITHER classifier uses `Bun.spawnSync`, static audit task passes cleanly, hooks.json no longer wires standalone tsgo, provenance-prefix-emitting aggregator function present, both classifiers use the shared async-spawn helper, both retain `import.meta.main` guard, orchestrator silent-noops on .txt, microbenchmark runs to completion.
+7. **Iter-94 regression test** ([14 assertions, all pass](../.mise/tasks/tests/test-posttooluse-edit-time-orchestrator-iter94-tsc-inlined-as-second-subhook-plus-async-bun-spawn-refactor-defeats-the-spawnsync-promise-all-anti-pattern-with-provenance-prefix-aggregation-and-static-audit-gate.sh)): orchestrator imports BOTH classifiers, registry ≥ 2 entries, dual-export naming present, NEITHER classifier uses `Bun.spawnSync`, static audit task passes cleanly, hooks.json no longer wires standalone tsc, provenance-prefix-emitting aggregator function present, both classifiers use the shared async-spawn helper, both retain `import.meta.main` guard, orchestrator silent-noops on .txt, microbenchmark runs to completion.
 8. **Iter-92 regression test follow-on update**: Case 3b now accepts EITHER standalone OR orchestrator-via-import as satisfying the [C] CONTEXT-INJECTING invariant — same migration-arc-decoupling pattern applied to Case 3a in iter-93.
 
 **Iter-94 forensic note (bash gotcha)**: my first iter-94 test failed Case 4a/4b because `grep -c PATTERN file || echo 0` PREPENDS a second "0" when grep exits non-zero (which it does for 0-match files). Fix: use `|| true` instead of `|| echo 0`. Documented here so future iterations avoid the same pitfall.
@@ -850,7 +850,7 @@ That meant the iter-93 orchestrator's `Promise.all` over N subhooks yielded **ze
 
 Iter-95 is a **2-subhook migration + a DRY refactor + a usability refinement + an empirical perf confirmation**, surfaced by the iter-95 adversarial multi-perspective audit. The audit found three issues:
 
-**Issue 1 (DRY)**: the iter-94 async-spawn helper + the install-reminder gate-file pattern were duplicated verbatim across `ty-type-check` + `tsgo-type-check`. With iter-95 inlining oxlint + biome (3rd + 4th subhooks), we'd have FOUR copies of the same helpers and drift between them would silently undermine the iter-94 async-Bun.spawn invariant. Iter-95 hoists everything into `lib/posttooluse-subhook-async-subprocess-execution-and-once-per-session-reminder-gate-file-helpers-iter95.ts`:
+**Issue 1 (DRY)**: the iter-94 async-spawn helper + the install-reminder gate-file pattern were duplicated verbatim across `ty-type-check` + `tsc-type-check`. With iter-95 inlining oxlint + biome (3rd + 4th subhooks), we'd have FOUR copies of the same helpers and drift between them would silently undermine the iter-94 async-Bun.spawn invariant. Iter-95 hoists everything into `lib/posttooluse-subhook-async-subprocess-execution-and-once-per-session-reminder-gate-file-helpers-iter95.ts`:
 
 | Helper                                                                                                    | Purpose                                                                                                                                                                                                                                                                                       |
 | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -927,15 +927,15 @@ Iter-97 is a **6th-subhook migration + 3 adversarial-audit remediations**. This 
 
 **The parallelism-fan-out milestone**. Pre-iter-97, the 5 inlined classifiers had DISJOINT extension filters:
 
-| Classifier      | Extensions matched                           |
-| --------------- | -------------------------------------------- |
-| ty-type-check   | `.py`, `.pyi`                                |
-| tsgo-type-check | `.ts`, `.tsx`                                |
-| oxlint-check    | `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs` |
-| biome-lint      | `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs` |
-| vale-claude-md  | `.md` (only CLAUDE.md)                       |
+| Classifier     | Extensions matched                           |
+| -------------- | -------------------------------------------- |
+| ty-type-check  | `.py`, `.pyi`                                |
+| tsc-type-check | `.ts`, `.tsx` (renamed from tsgo iter-126)   |
+| oxlint-check   | `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs` |
+| biome-lint     | `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs` |
+| vale-claude-md | `.md` (only CLAUDE.md)                       |
 
-Note that even tsgo/oxlint/biome overlap on `.ts`/`.tsx`/`.js`/`.jsx` — but the cold-start savings dominated because the heavy work in each is a SUBPROCESS spawn (ty/tsgo/oxlint/biome/vale binaries) so `Promise.all` was already buying real wall-clock parallelism for those overlapping cases. Iter-97 adds `ssot-principles` which overlaps EVERYTHING `.py`/`.ts`/`.tsx`/`.js`/`.jsx`/`.rs`/`.go`/`.java`/`.kt`/`.rb`. Wall-clock measurement now structurally converges to MAX(subhook), not SUM(subhook) — the iter-93 design goal made empirical.
+Note that even tsc/oxlint/biome overlap on `.ts`/`.tsx`/`.js`/`.jsx` — but the cold-start savings dominated because the heavy work in each is a SUBPROCESS spawn (ty/tsc/oxlint/biome/vale binaries) so `Promise.all` was already buying real wall-clock parallelism for those overlapping cases. Iter-97 adds `ssot-principles` which overlaps EVERYTHING `.py`/`.ts`/`.tsx`/`.js`/`.jsx`/`.rs`/`.go`/`.java`/`.kt`/`.rb`. Wall-clock measurement now structurally converges to MAX(subhook), not SUM(subhook) — the iter-93 design goal made empirical.
 
 **Audit-driven finding 1 (latent /tmp temp-file race)**. The pre-iter-97 `posttooluse-ssot-principles.ts` wrote proposed content to a FIXED scratch path under `/tmp` keyed only by the file-extension suffix (`/tmp/.claude-ssot-scan` + extname). Two concurrent Claude sessions writing the same extension would corrupt each other's scan buffer. Iter-97 fix: PostToolUse fires AFTER the tool executes, so the file IS on disk with new content by the time we run — scan `filePath` directly, eliminating the temp-file branch entirely. **No race possible.** This is the kind of subtle bug that adversarial audit + filesystem-concurrency-thinking finds before it bites in production.
 
@@ -1227,7 +1227,7 @@ Adversarial web research surfaced a previously-undiscovered silent-context-degra
 | -------------------------------------------- | ---------------------------------- | --------------------------------------------- |
 | `posttooluse-vale-claude-md.ts` (iter-104 ★) | N vale findings per CLAUDE.md edit | 50-200+ findings; ~5-20K chars                |
 | `posttooluse-ty-type-check.ts`               | N ty diagnostics per `.py` edit    | Variable; can exceed 10K on multi-error edits |
-| `posttooluse-tsgo-type-check.ts`             | N tsgo errors per `.ts` edit       | Same                                          |
+| `posttooluse-tsc-type-check.ts`              | N tsc errors per `.ts` edit        | Same                                          |
 | `posttooluse-oxlint-check.ts`                | N oxlint findings per JS/TS edit   | Same                                          |
 | `posttooluse-biome-lint.ts`                  | N biome findings per JS/TS edit    | Same                                          |
 | `posttooluse-ssot-principles.ts`             | N ast-grep anti-pattern findings   | Bounded by ast-grep result count              |
@@ -1281,7 +1281,7 @@ Iter-104 established the canonical truncation helper `truncateHookOutputToStayBe
 | ------------------------------------------------------------ | -------------------------------------------------------- | -------- |
 | `posttooluse-vale-claude-md.ts`                              | N vale findings on CLAUDE.md edit (50-200+, ~5-20K)      | iter-104 |
 | `posttooluse-ty-type-check.ts`                               | ty diagnostic stream per .py/.pyi edit                   | iter-105 |
-| `posttooluse-tsgo-type-check.ts`                             | tsgo diagnostic stream per project check                 | iter-105 |
+| `posttooluse-tsc-type-check.ts`                              | tsc diagnostic stream per project check                  | iter-105 |
 | `posttooluse-oxlint-check.ts`                                | oxlint correctness+suspicious findings                   | iter-105 |
 | `posttooluse-biome-lint.ts`                                  | biome complementary-rules findings                       | iter-105 |
 | `posttooluse-ssot-principles.ts`                             | ast-grep anti-pattern matches (multi-language fan-out)   | iter-105 |
