@@ -2,6 +2,95 @@
 
 Reverse chronological - newest on top.
 
+## 2026-08-03b — The dependent-service guard checked only the repo ROOT, and a venv can be present but incomplete
+
+**Trigger**: The guard added earlier the same day reported `~/eon/tasc` healthy
+(`.venv=ok`, `node_modules=—`) while `com.tasc.serve` had been crash-looping
+**11,593 times over ~32 hours**. Both readings were technically true and together
+useless.
+
+**Two distinct defects:**
+
+1. **Root-only manifest walk.** The check walks up from the launchd program to the
+   FIRST `package.json`/`pyproject.toml` and stops. `tasc` has `pyproject.toml` at
+   the root, so it reported `.venv=ok` and treated node deps as not-applicable —
+   but the service needs **`ts/node_modules`**, one directory down, which was
+   missing (`Cannot find module 'ajv/dist/2020'`, 11,637 log occurrences). Fix:
+   enumerate every manifest in the repo (maxdepth 3, excluding `node_modules/` and
+   `.venv/`) and check each one's sibling directory.
+2. **Present ≠ complete.** After restoring `ts/node_modules` the service still
+   failed with `ModuleNotFoundError: No module named 'numpy'`. The `.venv` existed
+   and imported `pymupdf` fine, because `uv sync` installs only the DEFAULT
+   dependency group; `tasc` declares its embedding deps under
+   `[dependency-groups] embed`. Resolved with `uv sync --group embed`. A directory
+   existing is not evidence the dependencies are installed.
+
+**Also corrected in this pass**: the crash loop was NOT caused by the disk
+cleanup — it began ~2026-08-02 14:00 local, roughly 32 h before. Checking that
+before assuming culpability mattered, because the previous entry's incident made
+"the cleanup broke it" the tempting default.
+
+**Adversarial verification earned its keep.** Before deleting a 4.48 GB
+`TASC 1982-2022` archive from Downloads, a second agent independently re-derived
+the redundancy claim: 4,662 PDFs in both locations, **matching MD5 checksums**
+sampled across 1982–2022, the repo copy gitignored by design and documented in
+its README, and extraction proven one-way (PDF → JSONL is lossy). Verdict
+CONFIRMED SAFE, deleted. The same pass **REFUTED** two other "obviously stale"
+installers — a MiniMax dmg whose version matched what was installed, and a
+`Claude.dmg` whose app had been modified after the download — both kept.
+
+**Measurement note worth carrying**: a `du -sh ~/.Trash` reading of 14G in Phase 1
+could not be reproduced later (0B, 0 items, confirmed by `du`, `find`, `ls` and
+`stat` agreeing). Cause unestablished. Recorded as unresolved rather than
+explained away.
+
+## 2026-08-03 — The biggest win was an app's own quarantined wreckage, and a sparse file lied by 16x
+
+**Trigger**: A full audit two days after the 2026-07-31 pass, which had left the
+volume at 61 % / 356 GB free. It was back to **82 % / 167 GB free** — 189 GB
+consumed in 48 hours. Phases 1, 2 and 2.5 all came back small (in-repo artifacts
+were only 12 GB, down from 109 GB), so the existing phases could not explain it.
+
+**What actually found it**: a plain top-level `du` of `$HOME`, which no phase
+prescribed. `~/.mempalace` was **190 GB** — larger than every cache, every repo
+and every `Library` subdirectory combined.
+
+**Two new failure modes, both now documented in Phase 3:**
+
+1. **Sparse files make `ls -l` lie.** The offending file reported **2,831 GB
+   apparent** against **174 GB allocated** — an impossible number on a 926 GB
+   disk. Anything sizing candidates with `ls -l` or `find -size` would have been
+   wildly misled; `du` was correct throughout.
+2. **Applications quarantine their own wreckage under self-describing names.**
+   The 175 GB lived in one directory literally named
+   `<uuid>.corrupt-20260802-160712.drift-20260802-160712`. MemPalace had detected
+   corruption from a 3-day crash loop, set the collection aside, and rebuilt a
+   healthy 882 MB replacement. The disk symptom and a separate 3-day service
+   outage were the same root cause. Added a marker-grep (`*corrupt*`, `.drift-*`,
+   `.pre-rebuild-*`, `.bak-*`, `.quarantine*`) plus a three-part safety proof
+   (no live fd, unreferenced in the app's manifest, healthy replacement exists).
+
+**Also added — the dependent-service check, promoted from a note to a required
+step.** The 2026-07-31 pass deleted `catgpt-gateway/node_modules`; its watchdog
+then failed 95 times and its restart attempts drove a Chrome launch that raised a
+macOS TCC prompt the user reported as a mystery. Phase 2.5 now builds the
+exclusion list from `~/Library/LaunchAgents/*.plist` BEFORE deleting, prints each
+skip so the guard is visible, and re-asserts the manifest→directory pairing
+afterwards. On this run it correctly protected `tasc`, `opendeviationbar-patterns`
+and `iterm2-scripts-moon`.
+
+**Evidence**: total reclaimed **219 GB** (730 → 510 GB used, 82 % → 57 % full):
+185.75 GB MemPalace (174.53 corrupt quarantine + 11.22 two pre-rebuild backups),
+20.05 GB caches (uv 10.40 at `~/.cache/uv`, huggingface 3.91, go-build 3.54,
+Homebrew 2.2), 10.53 GB in-repo artifacts. Post-cleanup verification found no new
+launchd failures; `com.tasc.serve` exit 1 was pre-existing with 11,593 runs and an
+intact `.venv`.
+
+**Sizing datum worth reusing**: a healthy MemPalace index is **~0.5× its source
+corpus** (4.05 GB index / 8.43 GB of `~/.claude/projects` JSONL = 0.48×), growing
+~0.15 GB/day against ~0.30 GB/day of corpus. Any multiple of that ratio is
+pathological, not "a big index".
+
 ## 2026-07-31 — Phase 1 read the WRONG VOLUME and under-reported disk use by 70x
 
 **Trigger**: A full audit opened with the skill's own `df -h /`, which reported

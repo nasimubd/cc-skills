@@ -11,9 +11,9 @@
 
 ## Quick navigation
 
-Jump directly to any of the 29 registered markers below. Markers are listed alphabetically within each lifecycle layer.
+Jump directly to any of the 30 registered markers below. Markers are listed alphabetically within each lifecycle layer.
 
-**Runtime-hook markers** (21; consumed by Pre/PostToolUse hooks via iter-107 helper on every Write/Edit/Bash invocation):
+**Runtime-hook markers** (22; consumed by Pre/PostToolUse hooks via iter-107 helper on every Write/Edit/Bash invocation):
 
 - [`ALLOW-LEGACY-TS`](#allow-legacy-ts)
 - [`BASH-LAUNCHD-OK`](#bash-launchd-ok)
@@ -35,6 +35,7 @@ Jump directly to any of the 29 registered markers below. Markers are listed alph
 - [`RELEASE-NOTES-OK`](#release-notes-ok)
 - [`SETPROCTITLE-OK`](#setproctitle-ok)
 - [`SHELL-SAFETY-OK`](#shell-safety-ok)
+- [`SKILL-PLUGIN-ROOT-OK`](#skill-plugin-root-ok)
 - [`SSoT-OK`](#ssot-ok)
 
 **Audit-task markers** (8; consumed by `.mise/` audit tasks once per release-preflight):
@@ -65,7 +66,7 @@ The marketplace honors two FAMILIES of escape-hatch markers — RUNTIME-HOOK mar
 - **iter-111 informational** (release preflight Check 4t): every producer-side marker token written in any marketplace file must appear in the canonical registry. Unregistered tokens are flagged as POTENTIAL TYPOS.
 - **iter-113 informational** (release preflight Check 4u): the on-disk `docs/marketplace-escape-hatch-marker-reference.md` (this file) must be in sync with the canonical registry source. Drift is reported via the iter-113 doc-drift detector.
 
-## Runtime-hook marker catalog (21 registered markers consumed by iter-107 shared helper)
+## Runtime-hook marker catalog (22 registered markers consumed by iter-107 shared helper)
 
 These markers are honored by PreToolUse/PostToolUse hooks at runtime — they suppress a specific hook's enforcement for a specific file or command. Detection runs on EVERY matching tool invocation.
 
@@ -407,6 +408,23 @@ These markers are honored by PreToolUse/PostToolUse hooks at runtime — they su
 
 ```
 # SHELL-SAFETY-OK: explain the deliberate exception here in at least 8 characters
+```
+
+## `SKILL-PLUGIN-ROOT-OK`
+
+| Field | Value |
+| ----- | ----- |
+| **Consumer hook** | `plugins/itp-hooks/hooks/pretooluse-skill-plugin-root-guard.ts` |
+| **Case-sensitivity mode** | `CASE_SENSITIVE` |
+| **Window-semantics mode** | `FILE_WIDE` |
+| **Reason policy** | Reason required after colon — minimum 10 characters |
+
+**What it does**: Allow skill markdown (any `.md` under a `skills/` directory) to reference `CLAUDE_PLUGIN_ROOT` in a shape the runtime cannot honor — the bare `$CLAUDE_PLUGIN_ROOT` spelling, the `${CLAUDE_PLUGIN_ROOT:-fallback}` form, or the braced form on a non-manifest line. Intended for documentation ABOUT the variable (path-patterns.md, advanced-topics.md, lifecycle-reference.md, hook-templates.md) and for diagnostic blocks that probe for it deliberately. REQUIRES a ≥10-character reason after the colon (e.g., `SKILL-PLUGIN-ROOT-OK: the canonical teaching doc for this variable`). FILE_WIDE: one marker anywhere in the file exempts the whole file, and on Edit/MultiEdit the marker is honored from the on-disk copy too.
+
+**Example usage**:
+
+```
+# SKILL-PLUGIN-ROOT-OK: explain the deliberate exception here in at least 10 characters
 ```
 
 ## `SSoT-OK`
