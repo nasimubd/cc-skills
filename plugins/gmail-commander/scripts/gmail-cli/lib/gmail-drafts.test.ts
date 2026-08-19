@@ -71,8 +71,8 @@ describe("encodeAddressHeader", () => {
   });
 
   test("passes an ASCII display name through verbatim", () => {
-    expect(encodeAddressHeader('"Dr. Phoebe W. Tsang Inc." <dmd0876@gmail.com>')).toBe(
-      '"Dr. Phoebe W. Tsang Inc." <dmd0876@gmail.com>',
+    expect(encodeAddressHeader('"Dr. Jane Q. Smith Inc." <a@b.com>')).toBe(
+      '"Dr. Jane Q. Smith Inc." <a@b.com>',
     );
   });
 });

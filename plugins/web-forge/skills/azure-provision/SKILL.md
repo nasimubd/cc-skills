@@ -119,7 +119,7 @@ in production. Emit both, read both from the same place.
 
 ## Reference implementation
 
-`~/459ecs/curve-dental` — the 2026-08-02 migration of a clinic's Speech + Language resources from a
+`~/459ecs/example-clinic` — the 2026-08-02 migration of a clinic's Speech + Language resources from a
 personal Microsoft account into the clinic's own tenant, under a CA block. Decision record: that
 repo's `docs/security-and-compliance/README.md`.
 

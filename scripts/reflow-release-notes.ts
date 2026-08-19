@@ -49,6 +49,25 @@ const STANDALONE = /^\s*(#{1,6}\s|>|\||---|\*\*\*|___|<)/;
 const EXPLICIT_BREAK = /\s{2,}$/;
 
 /**
+ * A hand-aligned block line: indented, with a run of 2+ spaces between non-space text.
+ *
+ * These are columns the author lined up — mapping tables, before/after lists, key/value
+ * pairs. CommonMark says an indented-by-less-than-four block is ordinary paragraph text,
+ * so the reflow was joining ten aligned rows into one unreadable line. That is *correct*
+ * markdown and *wrong* output.
+ *
+ * Found on v27.0.1, whose commit body maps eleven redacted identifiers in a 2-space-
+ * indented table; reflowing produced a single 500-character line.
+ *
+ * The pattern is deliberately narrow. Indentation ALONE would match wrapped bullet
+ * continuations, which must still fold back into their bullet. Requiring an internal run
+ * of 2+ spaces is what distinguishes a table from a sentence. The cost of a false
+ * positive is one paragraph left hard-wrapped; the cost of a false negative is a
+ * destroyed table, so the asymmetry favours this test being slightly eager.
+ */
+const ALIGNED_BLOCK_LINE = /^[ \t]+\S.*\S {2,}\S/;
+
+/**
  * Join hard-wrapped prose into one logical line per paragraph.
  * Blank lines remain the only paragraph separator, which is exactly how GFM reads them.
  */
@@ -84,6 +103,13 @@ export function reflowMarkdown(input: string): string {
       out.push(line.replace(/\s+$/, ""));
       continue;
     }
+    // Checked after LIST_ITEM would match, so an aligned-looking bullet still behaves as a
+    // bullet; only non-list indented rows are preserved verbatim.
+    if (ALIGNED_BLOCK_LINE.test(line) && !LIST_ITEM.test(line)) {
+      flush();
+      out.push(line.replace(/\s+$/, ""));
+      continue;
+    }
     if (LIST_ITEM.test(line)) {
       // Start a joinable block so the item's wrapped tail folds back into the bullet.
       flush();
@@ -110,17 +136,28 @@ export const normalizeForCompare = (s: string): string => s.replace(/\r\n/g, "\n
 export const isAlreadyFlat = (input: string): boolean =>
   normalizeForCompare(reflowMarkdown(input)) === normalizeForCompare(input);
 
+/**
+ * The CLI entry point, deliberately inside an async IIFE rather than using top-level await.
+ *
+ * A top-level `await` marks the whole module async, and Node then refuses to `require()` it
+ * (`ERR_REQUIRE_ASYNC_MODULE`) — even though the await is on a branch that a `require` never
+ * takes. `release.config.cjs` is CommonJS and must reach `reflowMarkdown` so semantic-release
+ * reflows commit bodies before they reach the published notes, so this module has to stay
+ * require-able from CJS. Keeping the await one level down costs nothing and buys that.
+ */
 if (import.meta.main) {
-  const check = process.argv.includes("--check");
-  const input = await Bun.stdin.text();
-  const flat = reflowMarkdown(input);
-  if (check) {
-    if (isAlreadyFlat(input)) {
-      console.error("[reflow-release-notes] already flat — no hard-wrapped prose found.");
-      process.exit(0);
+  void (async () => {
+    const check = process.argv.includes("--check");
+    const input = await Bun.stdin.text();
+    const flat = reflowMarkdown(input);
+    if (check) {
+      if (isAlreadyFlat(input)) {
+        console.error("[reflow-release-notes] already flat — no hard-wrapped prose found.");
+        process.exit(0);
+      }
+      console.error("[reflow-release-notes] HARD-WRAPPED prose detected; reflowing would change this body.");
+      process.exit(1);
     }
-    console.error("[reflow-release-notes] HARD-WRAPPED prose detected; reflowing would change this body.");
-    process.exit(1);
-  }
-  process.stdout.write(flat);
+    process.stdout.write(flat);
+  })();
 }

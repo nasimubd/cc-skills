@@ -1,3 +1,185 @@
+## [27.0.3](https://github.com/terrylica/cc-skills/compare/v27.0.2...v27.0.3) (2026-08-19)
+
+
+### Bug Fixes
+
+* **release:** escape angle brackets so GFM stops eating commit prose ([c15bf67](https://github.com/terrylica/cc-skills/commit/c15bf673a4336abd456179edd5dc56b9db1bb05b))
+
+GitHub renders a release body as GFM, which INTERPRETS raw HTML. A commit body is plain text written by a human, so every angle bracket in it was being silently corrupted on the published page. Verified against GitHub's own /markdown API rather than assumed:
+
+  "generic Vec&lt;T> type"     ->  "generic Vec type"      type param DELETED
+  "a Map&lt;Command,Handler>"  ->  "a Map"                 DELETED
+  "a literal &lt;br> here"     ->  a real line break
+  "compare a&lt;b and c>d"     ->  "compare a" + bold      MANGLED
+  "a &lt;details> block"       ->  opens a collapsible section that swallows
+                                everything after it
+
+The deletion case is the serious one: content vanishes with no warning anywhere, which is the same signature as the four defects fixed earlier today -- right in the commit, wrong on the page, silent.
+
+Safe because there is no working HTML to break. Every angle-bracket occurrence in the last 400 commit bodies of this repo is prose or a CLI placeholder: &lt;br>, &lt;script>, &lt;table> discussed AS TAGS, and &lt;uuid>, &lt;path>, &lt;slug>, &lt;account>, &lt;Command,Handler>, &lt;verify|probe|bench> as syntax placeholders. Not one is intentional markup. If real HTML is ever wanted in a release body, the path is a notes file through `mise run release:augment`.
+
+Details:
+
+* Only `<` is escaped. Escaping `>` would corrupt the `->` arrows that fill this repo's aligned mapping tables.
+* Code spans, fenced blocks and markdown autolinks are left alone -- they already render literally, and escaping them would publish a visible `&lt;` or break a working link.
+* Escaping runs BEFORE the reflow, not after. The reflow treats a line starting with `<` as a standalone HTML block and refuses to join it, so a paragraph wrapping onto a line that begins with `<script>` would stay hard-wrapped. Escaping first makes it ordinary prose that folds.
+
+30 tests. Four of them re-verify the premise against the live GitHub renderer instead of trusting a comment, and skip rather than pass vacuously when the API is unreachable. Mutation-tested at BOTH levels: stubbing the escaper fails its own suite, and stubbing the CALL in release.config.cjs fails 4 wiring tests -- the first mutation run passed, which is exactly how the reflow sat correct-but-unused for 200 releases.
+
+1344/1344 bun unit tests, 107/107 hook regression files.
+
+## [27.0.2](https://github.com/terrylica/cc-skills/compare/v27.0.1...v27.0.2) (2026-08-19)
+
+
+### Bug Fixes
+
+* **itp-hooks:** judge narrative per paragraph, not longest paragraph ([84f8355](https://github.com/terrylica/cc-skills/commit/84f83552303fba472207cdcd6ef098a08865948e))
+
+The release-notes extensiveness measurer kept only the LONGEST prose run and judged that one, so a long low-sentence block masked a perfectly good narrative elsewhere in the notes.
+
+Real false block, hit while repairing v27.0.1: those notes carry a 4-sentence 438-char narrative AND an 11-row aligned redaction table. The table accumulates as a single 583-char "paragraph" whose only sentence terminator is the full stop in "DR. TSANG". Being longest, it became the paragraph under test, and correct, extensive notes were refused with "no narrative paragraph ... longest run = 583 chars / 1 sentences".
+
+A guard that rejects correct work is worse than one that misses. It teaches authors to reach for the escape hatch, and the escape hatch then waves through the real misses too.
+
+Two changes, each independently necessary and each mutation-tested:
+
+* hasNarrative now asks whether ANY paragraph met both bars, rather than whether the single retained run did. Preferring most-sentences alone is not sufficient -- a SHORT punchy paragraph can outrank a LONG qualifying one and fail the char threshold on its behalf.
+* the retained run, now used only for the failure message, prefers most sentences then most characters. "583 chars / 1 sentences" pointed at a table and told the author nothing about the prose to lengthen.
+
+The gate is not loosened: notes with a table and bullets but no prose still fail, pinned by test.
+
+6 tests. 1314/1314 bun unit tests, 107/107 hook regression files.
+
+* **release:** preserve hand-aligned blocks when reflowing notes ([170dc6b](https://github.com/terrylica/cc-skills/commit/170dc6bf178464b627b81d3205467daa62d94327))
+
+CommonMark treats a block indented by fewer than four spaces as ordinary paragraph text, so the reflow joined hand-aligned rows into one line. That is correct markdown and wrong output: a mapping table, a before/after list or a key/value block is columns the author lined up on purpose.
+
+Found while repairing v27.0.1, whose commit body maps eleven redacted identifiers in a 2-space-indented table. Reflowing produced a single ~500-character line.
+
+An indented line is now preserved verbatim when its interior holds a run of two or more spaces. The pattern is deliberately narrow: indentation ALONE would also match a wrapped bullet continuation, which must still fold back into its bullet -- that is the bug the reflow exists to fix, so matching it here would undo the module's whole purpose. Requiring the internal run of spaces is what separates a table from a sentence. A false positive leaves one paragraph hard-wrapped; a false negative destroys a table, and the asymmetry favours being slightly eager.
+
+Checked after the list-item test, so an aligned-looking bullet still behaves as a bullet.
+
+5 tests, including the wrapped-bullet-continuation case that pins the false positive. Mutation-tested: removing the branch fails 3 of them. 1309/1309 bun unit tests pass.
+
+* **release:** stop silently truncating and re-wrapping release notes ([790702b](https://github.com/terrylica/cc-skills/commit/790702b8605c96d1dba494d3804c1350b86db7c1))
+
+Three independent defects were mangling every published release. All three sit between the extensiveness guard and GitHub, which is why the guard passed bodies that rendered wrong.
+
+Silent truncation
+-----------------
+conventional-commits-parser's default fieldPattern is /^-(.*?)-$/, and a line of dashes matches it. A setext heading underline or a markdown horizontal rule puts the parser into field-capture mode and EVERY remaining body line is swallowed into a field no writer template emits -- not moved to the footer, not flagged, gone. Measured on v27.0.1's own commit: 66 body lines in, 8 published. fieldPattern is now a regex that cannot match, on BOTH commit-analyzer and release-notes-generator, which the config already required to mirror each other.
+
+Body swallowed by its own bullet
+--------------------------------
+Handlebars strips the trailing newline of a line holding a lone block tag, so the template's intended blank line collapsed and the body was emitted directly under the "* subject" bullet. GFM reads that as a lazy continuation and renders the whole body INSIDE the list item. The template now carries two blank lines so one survives the strip.
+
+Hard-wrapped prose
+------------------
+Commit bodies are correctly wrapped at ~72 columns; GFM turns every newline inside a paragraph into a literal <br>, so identical text is right in the commit and wrong on the release page. The transform now reflows via the existing reflow-release-notes module -- imported, not reimplemented, so it cannot drift from `mise run release:augment`.
+
+The PreToolUse guard could never have caught any of this: it covers `gh release create`, and semantic-release publishes through the GitHub API via @semantic-release/github.
+
+Notes
+-----
+* reflow-release-notes.ts moved its CLI's top-level await into an async IIFE. Top-level await marks the module async and Node then refuses to require() it, which would have made the transform fall back silently to the raw body.
+* Reflow failure is non-fatal by design: a reflow that throws must not abort an otherwise-correct release, so it logs and surfaces the raw body, which is exactly the old behaviour rather than a broken one.
+* 17 new tests assert against RENDERED output, not just the transform, because a transform-only test passes while releases still look wrong. Includes a control test proving the default parser truncates, so the fix cannot be deleted with the suite still green.
+* Both fixes mutation-tested: bypassing the reflow fails 3 tests, collapsing the blank line fails 2.
+
+Validation: 1304/1304 bun unit tests, 107/107 hook regression files.
+
+## [27.0.1](https://github.com/terrylica/cc-skills/compare/v27.0.0...v27.0.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **marketplace:** redact remaining third-party identifiers ([2080804](https://github.com/terrylica/cc-skills/commit/20808049664fdd0f14a2bf264042303b648289aa))
+v27.0.0 shipped a partial scrub. This completes it. An 11-agent audit swept all
+2602 tracked files across five dimensions (known-client strings, contact data,
+narrative docs + CHANGELOG, code and test fixtures, credential-adjacent ids) and
+adversarially verified each hit against BOTH failure modes: leaving real PII in
+a public repo, and over-scrubbing docs into uselessness. 26 identifiers survived
+verification; all are redacted here.
+
+What was still exposed
+
+# [27.0.0](https://github.com/terrylica/cc-skills/compare/v26.2.0...v27.0.0) (2026-08-19)
+
+
+* feat!: remove the zai/GLM plugin ([fb161a6](https://github.com/terrylica/cc-skills/commit/fb161a6734b81e118ccf7f418df56a31fd9cc782))
+
+
+### Bug Fixes
+
+* **marketplace:** drop client-identifying strings from public content ([96b1e7f](https://github.com/terrylica/cc-skills/commit/96b1e7feeddc7ac7b8d1f639771c63ca4097372c))
+This repository is PUBLIC — `gh repo view` reports visibility PUBLIC, and the
+marketplace is installed by strangers with `claude plugin marketplace add`. Four
+tracked files carried strings that identify a private healthcare client of the
+operator: a real incorporated business name paired with a real gmail address in
+a unit-test fixture, the same client's honorific in a doc-comment example, their
+given name labelling an iMessage corpus, and their Cloudflare organization slug
+next to a private repository path. None of it was needed by any test, example or
+explanation, and all of it was reachable by anyone reading the repo.
+
+These were found while auditing a different change in the same repo, not by a
+report — which is the uncomfortable part, since they had already been published
+for weeks. The operator's own identities (terrylica, terry@eonlabs.com,
+amonic@gmail.com) are deliberate self-disclosure and are deliberately left
+alone; only third-party identities are redacted.
+
+Changes
+* **tts-tg-sync:** repair ⌥S hotkey broken by BTT's minimal PATH ([bc281f7](https://github.com/terrylica/cc-skills/commit/bc281f7a3d8ba57d54fa81a2dd6f141fc2605e9d))
+The BetterTouchTool ⌥S trigger stopped speaking entirely. Root cause, measured
+with `ps eww` on the live BetterTouchToolShellScriptRunner.xpc (PID 51539):
+BTT runs shell actions with
+
+    PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+Nothing under mise, homebrew or ~/.local/bin is reachable there. `uv` lives only
+at ~/.local/share/mise/installs/uv/..., so the guard at tts_read_clipboard.sh:239
+(`! command -v uv`) tripped and the script exited 1 before synthesising anything.
+
+The failure was invisible rather than loud: DEBUG defaults to 0 so
+/tmp/tts_debug.log was never created, and the uv invocation discarded stderr to
+/dev/null. BTT's own Result box shows stdout only, so it stayed blank.
+
+Changes
+
+
+### BREAKING CHANGES
+
+* the `zai` plugin is gone from this marketplace. `zai` CLI, `ask-glm` skill, `glm`
+subagent, `/zai:glm` and `/zai:zai-web-research` commands, and the bundled web_search_prime /
+web_reader MCP wiring all go with it. Anyone who installed `zai@cc-skills` should uninstall it; it
+will fail at the first call once the Z.ai key is revoked.
+
+Operator decision 2026-08-19. The Z.ai GLM subscription is being cancelled, so every path that reaches for GLM has to go
+before it starts returning 401s at the worst possible moment — mid-consult, inside a subagent,
+where it reads as a tool bug rather than an expired subscription.
+
+WHAT REPLACES IT, AND WHAT DOES NOT. GLM did two distinct jobs here:
+
+- A ~1M-token context window for documents too large for the session tier. This is REPLACED by
+  Claude Opus 5 through the operator's own sub2api gateway, where 1M context is native. That
+  replacement is private infrastructure and deliberately does NOT live in this public marketplace.
+- An INDEPENDENT second opinion from a different vendor's model. This is NOT replaced. Opus is the
+  same family as the caller, so a consult there is a fresh, unanchored pass — worth having, but not
+  evidence that "another model agreed". Anyone relying on the zai plugin for genuine model diversity
+  should reach for a different provider rather than assume the substitute covers it.
+
+The two Z.ai MCP servers (web_search_prime, web_reader) were removed from the operator's own client
+config in the same pass. The documented fallback chain for that capability is unchanged: curl →
+agent-reach → WebSearch → headless-Chrome visual check.
+
+The marketplace entry was removed by cutting the exact JSON object with brace counting rather than by
+re-serialising the file. A round-trip through a JSON encoder rewrote 34 unrelated lines — escaping
+every em-dash to — and expanding compact keyword arrays — which is a different change than the
+one intended and would have been committed silently. The diff is now 0 insertions, 27 deletions.
+
+CHANGELOG.md keeps its historical zai entries. A changelog is a record of what happened, not a
+description of current state, and rewriting it to hide a retired plugin would make it useless.
+
 # [26.2.0](https://github.com/terrylica/cc-skills/compare/v26.1.0...v26.2.0) (2026-08-18)
 
 
@@ -1543,7 +1725,7 @@ Found by reading the delivered MIME of a real clinic email rather than the sourc
 nine-item question checklist, written one item per line so two busy clinicians could answer by number
 without reading the message twice, arrived as:
 
-  - Q1 - DR. TSANG - Do you want... - Q2 - EITHER - "canine's phase"... - Q3 - EITHER - ...
+  - Q1 - DENTIST - Do you want... - Q2 - EITHER - "canine's phase"... - Q3 - EITHER - ...
 
 Five separate lists in that one message were affected, including the explanation of the five-stage
 model the whole email is organised around, and a three-option decision put to the practice owner. The
@@ -2109,7 +2291,7 @@ All fixes preserve runtime semantics; strictness now passes green across plugins
 ### Features
 
 * **gmail-commander:** canonical Gmail draft builder + PreToolUse guard against ad-hoc drafts-API writes ([ac754c0](https://github.com/terrylica/cc-skills/commit/ac754c06498e353371f0e62e3fa81d4023e3106e))
-Regression 2026-07-23 (curve-dental session): a Gmail draft built ad hoc
+Regression 2026-07-23 (example-clinic session): a Gmail draft built ad hoc
 (python + MIMEText text/plain) showed forced mid-paragraph line breaks in the
 compose window. Two compounding causes: (1) Gmail's drafts API re-encodes
 ingested raw messages (base64 -> quoted-printable observed) and HARD-FOLDS

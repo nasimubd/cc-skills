@@ -109,7 +109,7 @@ export type BodyBlock =
  * hard-wrapped the source. But it silently destroyed every list. A nine-item question checklist,
  * written one item per line, arrived in the recipient's inbox as a single run-on paragraph:
  *
- *     - Q1 - DR. TSANG - Do you want... - Q2 - EITHER - "canine's phase"... - Q3 - EITHER - ...
+ *     - Q1 - DENTIST - Do you want... - Q2 - EITHER - "canine's phase"... - Q3 - EITHER - ...
  *
  * That is worse than ugly. The whole point of that checklist was to let two busy clinicians answer by
  * number without reading the message twice, and collapsing it removed exactly the structure that made
