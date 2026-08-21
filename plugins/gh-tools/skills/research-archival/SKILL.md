@@ -19,11 +19,14 @@ Scrape AI research conversations (ChatGPT, Gemini, Claude) and web pages, archiv
 ```
 1. Identity preflight — verify GH_ACCOUNT or resolve via curl /user
 2. Scrape URL — route to Firecrawl or Jina per url-routing.md
-3. Save to file — YYYY-MM-DD-{slug}-{source_type}.md with frontmatter
-4. Survey labels — gh label list, reuse existing, max 3-6
-5. Create GitHub Issue — use --body with heredoc or --body-file
-6. Update frontmatter — add github_issue_url and github_issue_number
-7. Post canonical backlink comment on Issue
+3. Save the RAW scrape — docs/research/raw/…{source_type}.raw-scrape.txt, byte-exact, never edited
+4. Record its sha256 — over the raw file's exact bytes
+5. Write the EDITORIAL .md — frontmatter incl. raw_scrape_path + raw_scrape_sha256, and a POINTER.
+   Do NOT paste the transcript in; see "File Saving — TWO artifacts, and never one"
+6. Survey labels — gh label list, reuse existing, max 3-6
+7. Create GitHub Issue — use --body with heredoc or --body-file
+8. Update frontmatter — add github_issue_url and github_issue_number
+9. Post canonical backlink comment on Issue
 ```
 
 ### Template B - Save Only (no issue)
@@ -31,7 +34,8 @@ Scrape AI research conversations (ChatGPT, Gemini, Claude) and web pages, archiv
 ```
 1. Identity preflight (still required for consistency)
 2. Scrape URL — route to Firecrawl or Jina per url-routing.md
-3. Save to file — YYYY-MM-DD-{slug}-{source_type}.md with frontmatter
+3. Save the RAW scrape as .raw-scrape.txt + record its sha256
+4. Write the EDITORIAL .md with the provenance pin and a pointer — never the transcript itself
 ```
 
 ### Template C - Issue Only (file already exists)
@@ -64,21 +68,42 @@ The `gh-repo-identity-guard.mjs` PreToolUse hook provides a safety net, but this
 ```bash
 /usr/bin/env bash << 'IDENTITY_EOF'
 # Resolve authenticated user
-if [ -n "$GH_ACCOUNT" ]; then
+if [ -n "${GH_ACCOUNT:-}" ]; then
   AUTH_USER="$GH_ACCOUNT"
   AUTH_SOURCE="GH_ACCOUNT"
-else
+elif [ -n "${GH_TOKEN:-}" ]; then
   AUTH_USER=$(curl -sf --max-time 5 -H "Authorization: token $GH_TOKEN" \
     https://api.github.com/user 2>/dev/null | grep -o '"login":"[^"]*"' | cut -d'"' -f4)
   AUTH_SOURCE="API /user"
+else
+  # `gh` keeps the credential in the OS keyring, so GH_TOKEN is frequently absent from the
+  # environment on a correctly-configured machine. Asking gh is not a fallback, it is the
+  # normal path -- and omitting it made the API branch return empty on every keyring setup.
+  AUTH_USER=$(gh api user --jq .login 2>/dev/null)
+  AUTH_SOURCE="gh api user (keyring)"
 fi
 
-# Resolve target repo owner
-REPO_SLUG=$(git remote get-url origin 2>/dev/null | sed -n 's|.*github\.com[:/]\([^/]*/[^/.]*\).*|\1|p')
+# Resolve target repo owner.
+# `github\.com` alone does NOT match an SSH host alias: this machine's own owner-per-path policy
+# gives remotes like `git@github.com-terrylica:terrylica/repo.git`, where the character after
+# `github.com` is `-`, not `:` or `/`. The optional `[^:/]*` consumes the alias suffix.
+REPO_SLUG=$(git remote get-url origin 2>/dev/null | sed -n 's|.*github\.com[^:/]*[:/]\([^/]*/[^/.]*\).*|\1|p')
 REPO_OWNER=${REPO_SLUG%%/*}
 
-echo "Authenticated as: $AUTH_USER (via $AUTH_SOURCE)"
-echo "Target repo owner: $REPO_OWNER"
+echo "Authenticated as: ${AUTH_USER:-<unresolved>} (via $AUTH_SOURCE)"
+echo "Target repo owner: ${REPO_OWNER:-<unresolved>}"
+
+# FAIL CLOSED. If either side is empty the comparison below is "" = "" and the guard reports
+# SUCCESS while knowing nothing -- the exact green-signal-is-a-proxy failure this repo catalogues.
+# Observed 2026-08-20: an SSH-alias remote produced an empty owner, an absent GH_TOKEN produced an
+# empty user, and the check printed "Identity verified".
+if [ -z "${AUTH_USER:-}" ] || [ -z "${REPO_SLUG:-}" ]; then
+  echo ""
+  echo "BLOCKED — identity could not be RESOLVED, which is not the same as verified."
+  [ -z "${AUTH_USER:-}" ] && echo "  authenticated user : unresolved (set GH_ACCOUNT, or check \`gh auth status\`)"
+  [ -z "${REPO_SLUG:-}" ] && echo "  repo slug          : unresolved from $(git remote get-url origin 2>/dev/null || echo '<no origin>')"
+  exit 1
+fi
 
 if [ "$AUTH_USER" = "$REPO_OWNER" ]; then
   echo "Identity verified (personal repo, owner == authenticated user)"
@@ -180,18 +205,86 @@ SCRAPE_EOF
 
 ---
 
-## File Saving
+## File Saving — TWO artifacts, and never one
 
-### Naming Convention
+An archival produces **two** files. This is the single most important thing on this page, because
+getting it wrong is expensive and the cost is invisible until someone tries to verify the archive.
 
 ```
-YYYY-MM-DD-{slug}-{source_type}.md
+docs/research/raw/YYYY-MM-DD-{slug}-{source_type}.raw-scrape.txt   the scrape, byte-exact, NEVER edited
+docs/research/YYYY-MM-DD-{slug}-{source_type}.md                   editorial + a POINTER to it
 ```
 
 - `slug` — kebab-case summary (max 50 chars)
 - `source_type` — from enum: `chatgpt`, `gemini`, `claude`, `web`
 
-**Default location**: `docs/research/` in the current project.
+### 🔴 Do NOT paste the transcript into the `.md`
+
+It is the obvious thing to do and it is wrong. **Alpha-forge PR #540 removed a duplicated transcript
+after five successive review rounds**, each of which found a class of meaning-changing edit that the
+equivalence checker certified as identical: structural markers erased (a quotation demoted to the
+author's own assertion), inline delimiters erased (`` `not` `` reading as the English word),
+identifiers and URL paths retargeted through `_` and again through `__`, table cell boundaries moved
+so an outcome attached to the wrong reference, and literal asterisks consumed inside escapes, fenced
+and indented code blocks, and raw HTML attributes.
+
+The last class is a **category error, not a bug**. [CommonMark 0.31.2](https://spec.commonmark.org/0.31.2/)
+specifies parsing in two phases — _"In the first phase, lines of input are consumed and the block
+structure of the document … is constructed. Text is assigned to these blocks but not parsed. … In the
+second phase, the raw text contents of paragraphs and headings are parsed into sequences of Markdown
+inline elements"_ — so a line-oriented normaliser has **no block phase** and cannot tell a paragraph
+from a fenced code block. No amount of further patching converges.
+
+Why the question arises at all: any repository whose tooling reformats markdown (here, the `itp-hooks`
+Stop hook running `prettier --write` and `markdownlint-cli2 --fix`) makes a pasted copy **impossible
+to keep byte-identical**, so "is the copy still saying what the original said?" becomes a question you
+must answer on every commit. **With one copy there is no question.**
+
+### Enforcing one-copy: MEASURE the duplicate, never pattern-match a marker
+
+The first gate refused re-embedding by looking for the legacy `<!-- RAW-SCRAPE-BODY-BEGINS -->`
+comment. Review defeated it in one move: **append the whole transcript after a plain `---`, omit the
+marker, and the gate returns success** — while the test named `test_re_embedding_the_transcript_is_refused`
+stayed green, because that test built its fixture _using_ the marker. A pattern match presented as a
+structural guarantee, verified on the one input where the bug could not appear.
+
+Re-embedding is a **near-duplicate detection** problem, so use the standard measure for one:
+_containment_ over w-shingles, from Andrei Z. Broder, "On the resemblance and containment of
+documents", SEQUENCES 1997, `doi:10.1109/SEQUEN.1997.666900` — _"the containment c(A,B) of A in B is
+a number between 0 and 1 that, when close to 1, indicates that A is roughly contained within B"_, over
+_"the bag (multiset) of all shingles of size w contained in D"_.
+
+Four things make it work in practice:
+
+- **Containment, not resemblance.** The question is directional — how much of the _transcript_
+  reappears — and resemblance is symmetric, so a long editorial section would dilute it and mask a
+  full paste.
+- **Calibrate the threshold; do not choose it.** Measure the real archive and a ladder of partial
+  pastes. Ours: `0.0097` legitimate quoting → `0.1172` a tenth → `1.0000` the whole thing, so a `0.10`
+  limit sits ~10× above quoting and below every meaningful paste. Publish the ladder next to the
+  constant, or the number reads as a guess.
+- **Tokenise lowercased alphanumerics**, so the measure survives the very reformatting that made
+  byte-comparison impossible. A re-embedded transcript must still be caught after `prettier` runs.
+- **Sets, not multisets.** Broder defines a bag; a set answers "how much _distinct_ material was
+  reproduced", so pasting one fragment twenty times counts once — which is the right semantics here.
+
+**Scope the invariant to the repository, not to one file.** The second bypass was simply moving the
+copy: a sweep of only the archive that _pins_ the transcript reported success while a sibling `.md`
+held 100% of it. Sweep every markdown file, **and** measure their concatenation — twelve fragments
+each under the limit still reconstruct the transcript.
+
+State the two limits rather than claiming them away: **a single quoted line must still pass** (the
+archive itself legitimately quotes at ~1%, so any threshold that refuses one pasted line forbids
+quotation entirely), and **a heavily paraphrased re-embed defeats the measure** — at that point the
+documents genuinely differ and no automatic check can rule on whether meaning survived. That is the
+same undecidability that killed the normaliser; reviewer judgement is the only control.
+
+### The `.txt` extension is load-bearing
+
+Store the raw scrape as `.txt`, not `.md`. Markdown tooling globs `*.md`; a raw scrape kept as `.md`
+gets rewritten and its hash invalidated **without anyone touching it**. The extension makes the
+artifact immune by construction rather than by configuration — `.prettierignore` and
+`.gitattributes -text` are worth adding as defence in depth, but they are not the mechanism.
 
 ### YAML Frontmatter
 
@@ -201,16 +294,51 @@ See [frontmatter-schema.md](./references/frontmatter-schema.md) for the full fie
 ---
 source_url: https://chatgpt.com/share/...
 source_type: chatgpt-share
-scraped_at: "2026-02-09T18:30:00Z"
+scraped_at: "2026-02-09T18:30:00Z" # a REAL timestamp; never a rounded guess
+scraped_at_source: "how you obtained it, e.g. mtime of the scraper's output file"
+raw_scrape_path: docs/research/raw/YYYY-MM-DD-{slug}-{source_type}.raw-scrape.txt
+raw_scrape_sha256: "sha256 of the raw file's exact bytes"
+transcript_location: "not reproduced in this file; the sole copy is raw_scrape_path"
 model_name: gpt-4o
-custom_gpt_name: Cosmo
 claude_code_uuid: SESSION_UUID
 github_issue_url: ""
 github_issue_number: ""
 ---
 ```
 
+`raw_scrape_path` and `raw_scrape_sha256` are a **pair**. Declaring one without the other is worse
+than declaring neither: a hash with no file proves nothing, and a file with no hash is unverified
+while looking pinned. Gates should discover on **either** key so a half-declaration is refused rather
+than silently skipped.
+
 Leave `github_issue_url` and `github_issue_number` empty — update after Issue creation.
+
+### What goes in the `.md`
+
+Editorial only, and it is worth writing properly because it is the part a human reads:
+
+1. A **provenance warning** stating the transcript is not reproduced here and is untrusted AI output.
+2. An **audit note** — which citations were checked, by what method, and what was found. Distinguish
+   _identity_ checks (the DOI resolves to this title/author/venue) from _content_ checks (the source
+   actually says what the summary claims). They are different, and conflating them is the usual error.
+3. Any **known errors** in the source, stated where a reader will see them rather than only in the PR.
+4. A **pointer** to the `.txt` with its size and sha256.
+
+Verify citations by **content** via the Crossref API, never by HTTP status — a 403 bot-wall and a 404
+are indistinguishable from the status line. When Crossref carries no abstract, say so and mark the
+claim unverified rather than implying it was checked.
+
+**Match every verbatim quotation back against the retrieved document programmatically**, and check the
+extraction before trusting the match. `textutil -convert txt -stdout` on a PDF returned exactly the
+file's byte count — the raw bytes passed straight through, reported as success — against which any
+quote would have "verified" into binary noise. Sanity-check extracted length against page count, then
+compare whitespace-insensitive and ligature-folded, since extraction mangles inter-word spacing.
+
+When the match fails, **find out which kind of failure it is before editing anything**. Ours failed
+twice: once because the extractor interpolated a page number mid-sentence (the quotation was
+faithful), and once because a `'` had been substituted for the source's `"` _inside_ quotation marks.
+The second is a modification of quoted text however small it looks, and it is the same defect as
+substituting spoken names for glyphs that would not extract.
 
 ---
 
